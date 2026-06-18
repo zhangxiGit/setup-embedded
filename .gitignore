@@ -1,0 +1,5 @@
+.DS_Store
+*.log
+*.jlink
+flash.jlink
+build.log
