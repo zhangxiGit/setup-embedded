@@ -198,9 +198,10 @@
 
 ```
 setup-embedded/
-├── SKILL.md          # Claude Code skill 定义（运行时加载）
-├── SKILL.md.bak      # 旧版备份（rcw-tool 版本）
-└── README.md         # 本文件
+├── SKILL.md                # Claude Code skill 定义（运行时加载）
+├── embedlink-reference.md  # EmbedLink MCP Tool 详细参考
+├── README.md               # 本文件
+└── SKILL.md.bak            # 旧版备份（rcw-tool 版本，gitignore）
 ```
 
 ## 依赖
