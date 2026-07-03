@@ -1,6 +1,8 @@
 # EmbedLink MCP Tool 参考
 
-EmbedLink 通过 MCP 协议（SSE 传输，`http://127.0.0.1:3000/mcp`）替代 rcw-tool 提供日志采集。
+EmbedLink 通过 MCP 协议（HTTP 传输，`http://127.0.0.1:3000/mcp`）替代 rcw-tool 提供日志采集。
+
+> 源码仓库：<https://gitee.com/zhangxi95/embedlink_claude>
 
 ## rcw-tool → EmbedLink 命令映射
 

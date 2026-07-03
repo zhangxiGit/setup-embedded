@@ -8,7 +8,7 @@ A Claude Code skill providing a complete debug closed-loop for embedded firmware
 
 | Aspect | Old (rcw-tool) | New (EmbedLink) |
 |--------|---------------|----------------|
-| Protocol | CLI subcommands | MCP Tools (SSE transport) |
+| Protocol | CLI subcommands | MCP Tools (HTTP transport) |
 | Transport | USB HID | UART (MQTT supported, USB HID planned) |
 | Log viewing | `tail -n N` / `tail -f` / `grep` | `query_logs` + agent-side filtering |
 | Connection mgmt | `monitor &` background process | create → connect → query → disconnect lifecycle |
@@ -108,7 +108,7 @@ Executed on each `/setup-embedded` invocation:
 1. **Health check** — `curl -s http://127.0.0.1:3000/health`, expect `ok`
 2. **Health check fails** → prompt user to start EmbedLink (`cargo tauri dev` or desktop shortcut)
 3. **Health check passes** → verify MCP tools available (call `list_connections`)
-4. **MCP not configured** → prompt to add to `.mcp.json`: `{"embedlink": {"type": "sse", "url": "http://127.0.0.1:3000/mcp"}}`
+4. **MCP not configured** → prompt to add to `.mcp.json`: `{"embedlink": {"type": "http", "url": "http://127.0.0.1:3000/mcp"}}`
 
 ## EmbedLink MCP Tools Quick Reference
 
@@ -191,7 +191,7 @@ Executed on each `/setup-embedded` invocation:
 | `query_logs` returns nothing | Check baud rate; use `send_serial_data` to trigger log output |
 | `send_serial_data` gets no response | Verify command format matches firmware protocol; try ASCII/hex switch |
 | Large volume of stale data | Recreate connection: `disconnect` → `delete_connection` → recreate + `connect` |
-| MCP Tool returns "Unknown tool" | Check `.mcp.json` for embedlink SSE config |
+| MCP Tool returns "Unknown tool" | Check `.mcp.json` for embedlink HTTP config |
 | No boot logs after flash | Wait 2-3 seconds then query; or `send_serial_data` to actively trigger |
 
 ## File Structure

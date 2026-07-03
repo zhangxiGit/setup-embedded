@@ -8,7 +8,7 @@
 
 | 维度 | 旧（rcw-tool） | 新（EmbedLink） |
 |------|---------------|----------------|
-| 通信协议 | CLI 子命令 | MCP Tool（`sse` 传输） |
+| 通信协议 | CLI 子命令 | MCP Tool（`http` 传输） |
 | 传输层 | USB HID | UART（MQTT 已支持，USB HID 规划中） |
 | 日志查看 | `tail -n N` / `tail -f` / `grep` | `query_logs` + Agent 自行过滤 |
 | 连接管理 | `monitor &` 后台进程 | create → connect → query → disconnect 显式生命周期 |
@@ -108,7 +108,7 @@
 1. **健康检查** — `curl -s http://127.0.0.1:3000/health`，预期返回 `ok`
 2. **健康检查失败** → 提示用户启动 EmbedLink（`cargo tauri dev` 或桌面快捷方式）
 3. **健康检查成功** → 验证 MCP 工具可用（调用 `list_connections`）
-4. **MCP 未配置** → 提示在 `.mcp.json` 中添加 `{"embedlink": {"type": "sse", "url": "http://127.0.0.1:3000/mcp"}}`
+4. **MCP 未配置** → 提示在 `.mcp.json` 中添加 `{"embedlink": {"type": "http", "url": "http://127.0.0.1:3000/mcp"}}`
 
 ## EmbedLink MCP Tool 速查
 
@@ -191,7 +191,7 @@
 | `query_logs` 无数据 | 检查波特率配置；用 `send_serial_data` 发送控制指令 |
 | `send_serial_data` 无响应 | 确认指令格式与固件协议一致；尝试 ASCII / hex 切换 |
 | 返回大量历史数据 | 重建连接：`disconnect` → `delete_connection` → 重建 + `connect` |
-| MCP Tool 返回 "Unknown tool" | 检查 `.mcp.json` 中的 embedlink SSE 配置 |
+| MCP Tool 返回 "Unknown tool" | 检查 `.mcp.json` 中的 embedlink HTTP 配置 |
 | 烧录后无启动日志 | 等待 2-3 秒再查询；或 `send_serial_data` 主动触发 |
 
 ## 文件结构

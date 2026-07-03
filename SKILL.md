@@ -32,7 +32,7 @@ description: Use when developing, debugging, building, or flashing embedded firm
 2. **失败时** → 提示用户启动 EmbedLink（`cargo tauri dev` 或桌面快捷方式）
 3. **成功时** → 调用 `list_connections` 验证 MCP 工具可用；若返回 "Unknown tool"，提示配置 `.mcp.json`：
    ```json
-   {"embedlink": {"type": "sse", "url": "http://127.0.0.1:3000/mcp"}}
+   {"embedlink": {"type": "http", "url": "http://127.0.0.1:3000/mcp"}}
    ```
 4. **读取 `.claude/embedded-config.md`：** 若含旧格式（`rcw-tool路径` 或 `## Tool A 日志`），提示迁移：删除 `## Tool A 日志`，UART 参数迁入 `## 日志采集`，USB HID 参数加注释保留。`## 编译` / `## 烧录` 原样保留。
 
@@ -222,5 +222,5 @@ rm flash.jlink
 | `list_serial_ports` 返回空 | 检查 USB 线 + CH340/CP210x 驱动 |
 | `connect` 失败 | 关闭 Putty / 串口助手；检查设备上电 |
 | `query_logs` 无数据 | 检查波特率；用 `send_serial_data` 触发 |
-| MCP Tool 返回 "Unknown tool" | 检查 `.mcp.json` 中的 embedlink SSE 配置 |
+| MCP Tool 返回 "Unknown tool" | 检查 `.mcp.json` 中的 embedlink HTTP 配置 |
 | `query_logs` 返回大量历史数据 | 重建连接 |
