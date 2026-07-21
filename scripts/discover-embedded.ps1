@@ -59,6 +59,10 @@ $projects = @(
                 $linkerOptions = $options.TargetArmAds.LDads
                 $start = Convert-ToUInt64OrNull $linkerOptions.IROM.StartAddress
                 $size = Convert-ToUInt64OrNull $linkerOptions.IROM.Size
+                if ($null -eq $start -or $null -eq $size) {
+                    $start = $null
+                    $size = $null
+                }
                 $outputName = [string]$commonOptions.OutputName
                 $artifactPath = if ([string]::IsNullOrWhiteSpace($outputName)) {
                     $null

@@ -22,5 +22,12 @@
         <TargetArmAds><LDads><IROM><StartAddress>0XNOTHEX</StartAddress><Size>0xBAD!</Size></IROM><ScatterFile>.\malformed.sct</ScatterFile></LDads></TargetArmAds>
       </TargetOption>
     </Target>
+    <Target>
+      <TargetName>Application with malformed IROM size</TargetName>
+      <TargetOption>
+        <TargetCommonOption><OutputDirectory>.\Objects\</OutputDirectory><OutputName>app-bad-size</OutputName></TargetCommonOption>
+        <TargetArmAds><LDads><IROM><StartAddress>0x0800C000</StartAddress><Size>invalid-size</Size></IROM><ScatterFile>.\app-bad-size.sct</ScatterFile></LDads></TargetArmAds>
+      </TargetOption>
+    </Target>
   </Targets>
 </Project>
