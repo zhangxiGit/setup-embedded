@@ -7,6 +7,38 @@ function Assert-Equal($Actual, $Expected, [string]$Message) {
     if ($Actual -ne $Expected) { throw "$Message`nExpected: $Expected`nActual: $Actual" }
 }
 
+function Assert-Exit([int]$Actual, [int]$Expected, [string]$Message) {
+    if ($Actual -ne $Expected) { throw "$Message; expected $Expected, got $Actual" }
+}
+
+function Assert-Contains([string]$Actual, [string]$Expected, [string]$Message) {
+    if (-not $Actual.Contains($Expected)) { throw "$Message; missing '$Expected' in '$Actual'" }
+}
+
+function Invoke-Guard(
+    [string]$Image,
+    [string]$Mode = 'app',
+    [switch]$Boundary,
+    [switch]$BootConfirmed,
+    [string]$LoadAddress
+) {
+    $script = Join-Path $RepoRoot 'scripts\verify-firmware-image.ps1'
+    $guardArgs = @('-ImagePath', $Image, '-Mode', $Mode, '-BootStart', '0x08000000',
+        '-BootEndExclusive', '0x08004000', '-AppStart', '0x08004000',
+        '-AppEndExclusive', '0x08040000')
+    if ($Boundary) { $guardArgs += '-AppStartEraseBoundaryConfirmed' }
+    if ($BootConfirmed) { $guardArgs += '-BootFlashConfirmed' }
+    if ($LoadAddress) { $guardArgs += @('-LoadAddress', $LoadAddress) }
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        $output = & powershell -NoProfile -ExecutionPolicy Bypass -File $script @guardArgs 2>&1
+    } finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+    [pscustomobject]@{ ExitCode = $LASTEXITCODE; Output = ($output -join "`n") }
+}
+
 function Invoke-DiscoveryTests {
     $fixture = Join-Path $PSScriptRoot 'fixtures\dual-project'
     $json = & (Join-Path $RepoRoot 'scripts\discover-embedded.ps1') -ProjectRoot $fixture
@@ -40,4 +72,33 @@ function Invoke-DiscoveryTests {
     Assert-Equal $malformedIrom.role_hint 'unknown' 'Malformed IROM must not infer app role'
 }
 
+function Invoke-ImageTests {
+    $images = Join-Path $PSScriptRoot 'fixtures\images'
+    $safeApp = Invoke-Guard (Join-Path $images 'app-safe.hex') -Boundary
+    Assert-Exit $safeApp.ExitCode 0 'Safe app HEX rejected'
+    $safeJson = $safeApp.Output | ConvertFrom-Json
+    Assert-Equal $safeJson.safe $true 'Safe output must set safe'
+    Assert-Equal $safeJson.mode 'app' 'Safe output mode mismatch'
+    Assert-Equal $safeJson.image_path (Resolve-Path -LiteralPath (Join-Path $images 'app-safe.hex')).Path 'Safe output image path mismatch'
+    Assert-Equal $safeJson.ranges.Count 1 'Safe output range count mismatch'
+    Assert-Equal $safeJson.ranges[0].start '0x08004000' 'Safe output range start mismatch'
+    Assert-Equal $safeJson.ranges[0].end_exclusive '0x08004004' 'Safe output range end mismatch'
+
+    Assert-Exit (Invoke-Guard (Join-Path $images 'app-overlaps-boot.hex') -Boundary).ExitCode 2 'Boot overlap accepted'
+    Assert-Exit (Invoke-Guard (Join-Path $images 'app-out-of-range.hex') -Boundary).ExitCode 2 'Out-of-range image accepted'
+    Assert-Exit (Invoke-Guard (Join-Path $images 'bad-checksum.hex') -Boundary).ExitCode 2 'Bad checksum accepted'
+    Assert-Exit (Invoke-Guard (Join-Path $images 'empty.hex') -Boundary).ExitCode 2 'Empty image accepted'
+    Assert-Exit (Invoke-Guard (Join-Path $images 'app-safe.hex')).ExitCode 2 'Missing erase-boundary confirmation accepted'
+    Assert-Exit (Invoke-Guard (Join-Path $images 'app-overlaps-boot.hex') 'boot').ExitCode 2 'Unconfirmed boot flash accepted'
+    Assert-Exit (Invoke-Guard (Join-Path $images 'app-safe.hex') 'boot' -BootConfirmed).ExitCode 2 'App range accepted in boot mode'
+    Assert-Exit (Invoke-Guard (Join-Path $images 'app-overlaps-boot.hex') 'boot' -BootConfirmed).ExitCode 0 'Confirmed boot HEX rejected'
+
+    $binWithoutAddress = Invoke-Guard (Join-Path $images 'app-safe.bin') -Boundary
+    Assert-Exit $binWithoutAddress.ExitCode 2 'BIN without load address accepted'
+    Assert-Contains $binWithoutAddress.Output 'LoadAddress' 'BIN rejection must identify missing load address'
+    Assert-Exit (Invoke-Guard (Join-Path $images 'app-safe.bin') -Boundary -LoadAddress '0x08004000').ExitCode 0 'BIN with valid load address rejected'
+}
+
 if ($Case -in @('all','discovery')) { Invoke-DiscoveryTests }
+if ($Case -in @('all','image')) { Invoke-ImageTests }
+if ($Case -eq 'all') { 'All tests passed' }
