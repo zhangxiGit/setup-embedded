@@ -1,10 +1,10 @@
 param(
-    [Parameter(Mandatory)][string]$ImagePath,
-    [Parameter(Mandatory)][ValidateSet('app', 'boot')][string]$Mode,
-    [Parameter(Mandatory)][string]$BootStart,
-    [Parameter(Mandatory)][string]$BootEndExclusive,
-    [Parameter(Mandatory)][string]$AppStart,
-    [Parameter(Mandatory)][string]$AppEndExclusive,
+    [AllowNull()][string]$ImagePath,
+    [AllowNull()][string]$Mode,
+    [AllowNull()][string]$BootStart,
+    [AllowNull()][string]$BootEndExclusive,
+    [AllowNull()][string]$AppStart,
+    [AllowNull()][string]$AppEndExclusive,
     [switch]$AppStartEraseBoundaryConfirmed,
     [string]$LoadAddress,
     [switch]$BootFlashConfirmed
@@ -99,8 +99,23 @@ function Merge-Ranges($Ranges) {
 }
 
 try {
-    $resolvedImagePath = (Resolve-Path -LiteralPath $ImagePath -ErrorAction Stop).Path
-    if ((Get-Item -LiteralPath $resolvedImagePath).Length -eq 0) { Stop-Unsafe 'Firmware image is empty' }
+    foreach ($requiredParameter in @(
+        @{ Name = 'ImagePath'; Value = $ImagePath },
+        @{ Name = 'Mode'; Value = $Mode },
+        @{ Name = 'BootStart'; Value = $BootStart },
+        @{ Name = 'BootEndExclusive'; Value = $BootEndExclusive },
+        @{ Name = 'AppStart'; Value = $AppStart },
+        @{ Name = 'AppEndExclusive'; Value = $AppEndExclusive }
+    )) {
+        if ([string]::IsNullOrWhiteSpace($requiredParameter.Value)) { Stop-Unsafe "Missing required parameter: $($requiredParameter.Name)" }
+    }
+    if ($Mode -notin @('app', 'boot')) { Stop-Unsafe "Invalid mode: $Mode" }
+
+    $imageItem = Get-Item -LiteralPath $ImagePath -ErrorAction Stop
+    if ($imageItem.PSIsContainer) { Stop-Unsafe 'Firmware image path must be a file' }
+    $resolvedImagePath = $imageItem.FullName
+    [UInt64]$imageLength = $imageItem.Length
+    if ($imageLength -eq 0) { Stop-Unsafe 'Firmware image is empty' }
 
     [UInt64]$bootStartValue = Convert-ToUInt64 $BootStart
     [UInt64]$bootEndValue = Convert-ToUInt64 $BootEndExclusive
@@ -115,9 +130,8 @@ try {
     } elseif ($extension -eq '.bin') {
         if ([string]::IsNullOrWhiteSpace($LoadAddress)) { Stop-Unsafe 'BIN image requires LoadAddress' }
         [UInt64]$start = Convert-ToUInt64 $LoadAddress
-        [UInt64]$length = (Get-Item -LiteralPath $resolvedImagePath).Length
-        if ([UInt64]::MaxValue - $start -lt $length) { Stop-Unsafe 'BIN image range overflows address space' }
-        $ranges = @([pscustomobject]@{ start = $start; end = $start + $length })
+        if ([UInt64]::MaxValue - $start -lt $imageLength) { Stop-Unsafe 'BIN image range overflows address space' }
+        $ranges = @([pscustomobject]@{ start = $start; end = $start + $imageLength })
     } else {
         Stop-Unsafe "Unsupported firmware image format: $extension"
     }
