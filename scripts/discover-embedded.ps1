@@ -16,17 +16,22 @@ function Resolve-OptionalPath([string]$Base, [string]$Value) {
 }
 
 function Get-RoleHint([string]$Name, [Nullable[UInt64]]$Start) {
+    if ($null -eq $Start) { return 'unknown' }
     if ($Name -match '(?i)boot|loader') { return 'boot' }
     if ($Name -match '(?i)app|application') { return 'app' }
-    if ($null -ne $Start -and $Start -eq 0x08000000) { return 'boot' }
+    if ($Start -eq 0x08000000) { return 'boot' }
     'unknown'
 }
 
 function Convert-ToUInt64OrNull([string]$Value) {
     if ([string]::IsNullOrWhiteSpace($Value)) { return $null }
     $trimmedValue = $Value.Trim()
-    if ($trimmedValue -match '^0x') { return [Convert]::ToUInt64($trimmedValue.Substring(2), 16) }
-    [Convert]::ToUInt64($trimmedValue, 10)
+    try {
+        if ($trimmedValue -match '^(?i)0x') { return [Convert]::ToUInt64($trimmedValue.Substring(2), 16) }
+        [Convert]::ToUInt64($trimmedValue, 10)
+    } catch {
+        $null
+    }
 }
 
 function Find-ToolPath([string]$ExplicitPath, [string]$CommandName, [string[]]$KnownPaths) {

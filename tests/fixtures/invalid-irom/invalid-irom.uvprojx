@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Project>
+  <Targets>
+    <Target>
+      <TargetName>Bootloader without IROM</TargetName>
+      <TargetOption>
+        <TargetCommonOption><OutputDirectory>.\Objects\</OutputDirectory><OutputName>missing</OutputName></TargetCommonOption>
+        <TargetArmAds><LDads><ScatterFile>.\missing.sct</ScatterFile></LDads></TargetArmAds>
+      </TargetOption>
+    </Target>
+    <Target>
+      <TargetName>Uppercase IROM prefix</TargetName>
+      <TargetOption>
+        <TargetCommonOption><OutputDirectory>.\Objects\</OutputDirectory><OutputName>upper</OutputName></TargetCommonOption>
+        <TargetArmAds><LDads><IROM><StartAddress>0X08008000</StartAddress><Size>not-a-size</Size></IROM><ScatterFile>.\upper.sct</ScatterFile></LDads></TargetArmAds>
+      </TargetOption>
+    </Target>
+    <Target>
+      <TargetName>Application with malformed IROM</TargetName>
+      <TargetOption>
+        <TargetCommonOption><OutputDirectory>.\Objects\</OutputDirectory><OutputName>malformed</OutputName></TargetCommonOption>
+        <TargetArmAds><LDads><IROM><StartAddress>0XNOTHEX</StartAddress><Size>0xBAD!</Size></IROM><ScatterFile>.\malformed.sct</ScatterFile></LDads></TargetArmAds>
+      </TargetOption>
+    </Target>
+  </Targets>
+</Project>
