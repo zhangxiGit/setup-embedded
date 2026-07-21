@@ -3,3 +3,4 @@
 *.jlink
 flash.jlink
 build.log
+.worktrees/
