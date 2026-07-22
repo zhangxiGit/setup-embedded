@@ -6,6 +6,7 @@ param(
     [AllowNull()][string]$AppStart,
     [AllowNull()][string]$AppEndExclusive,
     [switch]$AppStartEraseBoundaryConfirmed,
+    [string[]]$ExtraArguments,
     [string]$LoadAddress,
     [switch]$BootFlashConfirmed
 )
@@ -99,6 +100,8 @@ function Merge-Ranges($Ranges) {
 }
 
 try {
+    if ($args.Count -ne 0) { Stop-Unsafe "Unexpected argument: $($args[0])" }
+    if ($ExtraArguments.Count -ne 0) { Stop-Unsafe "Unexpected argument: $($ExtraArguments[0])" }
     foreach ($requiredParameter in @(
         @{ Name = 'ImagePath'; Value = $ImagePath },
         @{ Name = 'Mode'; Value = $Mode },

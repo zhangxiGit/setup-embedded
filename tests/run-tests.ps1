@@ -81,6 +81,10 @@ function Invoke-ImageTests {
     $images = Join-Path $PSScriptRoot 'fixtures\images'
     $guardRanges = @('-BootStart', '0x08000000', '-BootEndExclusive', '0x08004000',
         '-AppStart', '0x08004000', '-AppEndExclusive', '0x08040000')
+    $safeGuardArgs = @('-ImagePath', (Join-Path $images 'app-safe.hex'), '-Mode', 'app') + $guardRanges + '-AppStartEraseBoundaryConfirmed'
+    Assert-Exit (Invoke-GuardCommand $safeGuardArgs).ExitCode 0 'Valid safe invocation rejected'
+    Assert-Exit (Invoke-GuardCommand ($safeGuardArgs + '-Bogus')).ExitCode 2 'Unknown named argument accepted'
+    Assert-Exit (Invoke-GuardCommand ($safeGuardArgs + 'trailing-token')).ExitCode 2 'Trailing positional argument accepted'
     $safeApp = Invoke-Guard (Join-Path $images 'app-safe.hex') -Boundary
     Assert-Exit $safeApp.ExitCode 0 'Safe app HEX rejected'
     $safeJson = $safeApp.Output | ConvertFrom-Json
