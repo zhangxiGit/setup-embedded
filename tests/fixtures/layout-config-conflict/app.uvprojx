@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Project>
+  <Targets>
+    <Target>
+      <TargetName>MainFirmware</TargetName>
+      <TargetOption>
+        <TargetCommonOption><OutputDirectory>.\Objects\</OutputDirectory><OutputName>app</OutputName></TargetCommonOption>
+        <TargetArmAds><LDads><IROM><StartAddress>0x08004000</StartAddress><Size>0x0003C000</Size></IROM><ScatterFile>.\app.sct</ScatterFile></LDads></TargetArmAds>
+      </TargetOption>
+    </Target>
+  </Targets>
+</Project>

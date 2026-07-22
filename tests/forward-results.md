@@ -646,7 +646,7 @@ Exit code: 0
 | Codex / Claude Code 双平台 | `SKILL.md`、`README.md` | README 同时给出 `$setup-embedded` 与 `/setup-embedded` 安装/使用入口；两者复用同一 skill 目录 |
 | 统一配置 | `SKILL.md`、`README.md` | `.embedded/embedded-config.md` contract 包含 build、Flash layout、J-Link 与 UART 字段；`connection_id` 明确只属于 runtime |
 | Legacy migration | `SKILL.md`、`README.md` | 迁移前展示字段并确认；旧文件保持原样；丢弃 `rcw-tool` fields |
-| Boot / app detection | `scripts/discover-embedded.ps1`、`tests/run-tests.ps1` | dual-project、invalid/incomplete IROM fixtures 通过；discovery 只生成候选，确认前不 build/flash |
+| Boot / app detection | `scripts/discover-embedded.ps1`、`tests/run-tests.ps1` | dual-project、invalid/incomplete IROM、scatter/IROM 一致与冲突、统一配置冲突、malformed/missing scatter fixtures 通过；JSON 输出可审计的 `range_sources`、`layout_conflicts` 与 `effective_range`，冲突时 `role_hint=unknown` 且不提供 effective range；discovery 只生成候选，确认前不 build/flash |
 | Artifact binding | `SKILL.md`、`references/keil-jlink.md` | `AppProject` / `AppTarget` / `AppArtifact` positive contract；Scenario A 5/5 PASS |
 | Intel HEX guard | `scripts/verify-firmware-image.ps1`、`tests/run-tests.ps1` | extended address、overlap、out-of-range、checksum、empty/malformed、BIN、unexpected args 等 regression tests 全部通过；Scenario B 5/5 PASS |
 | Boot confirmation | `SKILL.md`、`references/keil-jlink.md`、`tests/run-tests.ps1` | 只有 explicit boot request + second confirmation 才传 `-Mode boot -BootFlashConfirmed`；缺失确认的测试通过 |

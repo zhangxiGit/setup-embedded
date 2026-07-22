@@ -15,6 +15,12 @@ function Assert-Contains([string]$Actual, [string]$Expected, [string]$Message) {
     if (-not $Actual.Contains($Expected)) { throw "$Message; missing '$Expected' in '$Actual'" }
 }
 
+function Invoke-Discovery([string]$FixtureName) {
+    $fixture = Join-Path $PSScriptRoot "fixtures\$FixtureName"
+    $json = & (Join-Path $RepoRoot 'scripts\discover-embedded.ps1') -ProjectRoot $fixture
+    $json | ConvertFrom-Json
+}
+
 function Invoke-Guard(
     [string]$Image,
     [string]$Mode = 'app',
@@ -75,6 +81,39 @@ function Invoke-DiscoveryTests {
     Assert-Equal $malformedIrom.irom_start $null 'Malformed IROM start must be null'
     Assert-Equal $malformedIrom.irom_size $null 'Malformed IROM size must be null'
     Assert-Equal $malformedIrom.role_hint 'unknown' 'Malformed IROM must not infer app role'
+
+    $validLayout = Invoke-Discovery 'layout-valid'
+    $validTarget = @($validLayout.projects.targets)[0]
+    Assert-Equal $validTarget.layout_status 'consistent' 'Matching scatter and IROM must be consistent'
+    Assert-Equal $validTarget.scatter_ranges.Count 1 'Expected one parsed scatter load region'
+    Assert-Equal $validTarget.scatter_ranges[0].start '0x08004000' 'Scatter start mismatch'
+    Assert-Equal $validTarget.scatter_ranges[0].end_exclusive '0x08040000' 'Scatter end mismatch'
+    Assert-Equal $validTarget.effective_range.source 'scatter' 'Scatter must outrank IROM'
+    Assert-Equal $validTarget.layout_conflicts.Count 0 'Matching layout must have no conflicts'
+
+    $scatterConflict = Invoke-Discovery 'layout-scatter-conflict'
+    $scatterConflictTarget = @($scatterConflict.projects.targets)[0]
+    Assert-Equal $scatterConflictTarget.layout_status 'conflict' 'Scatter/IROM disagreement must conflict'
+    Assert-Equal $scatterConflictTarget.role_hint 'unknown' 'Conflicting target must fail closed'
+    Assert-Equal $scatterConflictTarget.effective_range $null 'Conflicting target must not expose an effective range'
+    Assert-Contains (($scatterConflictTarget.layout_conflicts | ConvertTo-Json -Compress) -join '') 'scatter_vs_irom' 'Scatter/IROM conflict verdict missing'
+
+    $configConflict = Invoke-Discovery 'layout-config-conflict'
+    $configConflictTarget = @($configConflict.projects.targets)[0]
+    Assert-Equal $configConflictTarget.layout_status 'conflict' 'Config/target disagreement must conflict'
+    Assert-Equal $configConflictTarget.role_hint 'unknown' 'Config conflict must fail closed'
+    Assert-Equal $configConflict.flash_layout_config.app.start '0x08008000' 'Config AppStart was not parsed'
+    Assert-Contains (($configConflictTarget.layout_conflicts | ConvertTo-Json -Compress) -join '') 'config_vs_target' 'Config conflict verdict missing'
+
+    $invalidScatter = Invoke-Discovery 'layout-invalid-scatter'
+    $malformedScatter = @($invalidScatter.projects.targets) | Where-Object name -eq 'Application malformed scatter'
+    Assert-Equal $malformedScatter.layout_status 'conflict' 'Malformed referenced scatter must fail closed'
+    Assert-Equal $malformedScatter.role_hint 'unknown' 'Malformed scatter must clear role hint'
+    Assert-Equal $malformedScatter.range_sources.scatter.status 'invalid' 'Malformed scatter status missing'
+    $missingScatter = @($invalidScatter.projects.targets) | Where-Object name -eq 'Application missing scatter'
+    Assert-Equal $missingScatter.layout_status 'conflict' 'Unreadable referenced scatter must fail closed'
+    Assert-Equal $missingScatter.role_hint 'unknown' 'Unreadable scatter must clear role hint'
+    Assert-Equal $missingScatter.range_sources.scatter.status 'unreadable' 'Unreadable scatter status missing'
 }
 
 function Invoke-ImageTests {

@@ -30,7 +30,7 @@ description: Use when building, flashing, debugging, or hardware-testing Windows
    powershell -NoProfile -ExecutionPolicy Bypass -File scripts\discover-embedded.ps1 -ProjectRoot <workspace-absolute-path>
    ```
 
-   展示 JSON 中每个 `.uvprojx`、target、`role_hint`、IROM range 与 `artifact_path`。自动发现只产生候选；让用户确认哪组是 boot、哪组是 app，以及对应 Flash layout，确认前不 build/flash。
+   展示 JSON 中每个 `.uvprojx`、target、`role_hint`、`range_sources`、`layout_status`、`layout_conflicts`、`effective_range` 与 `artifact_path`。`layout_status=conflict` 或 `role_hint=unknown` 时 fail closed：展示冲突并停止，不得写入统一配置或继续 build/flash。自动发现只产生候选；让用户确认哪组是 boot、哪组是 app，以及对应 Flash layout，确认前不 build/flash。
 4. **处理 legacy config**：发现 `.Codex/embedded-config.md` 或 `.claude/embedded-config.md` 时，先展示可迁移字段并取得用户确认。只迁移有效的 Keil、J-Link、project、Flash layout 与 UART 参数；丢弃 `rcw-tool` 专属字段。新建 `.embedded/embedded-config.md`，旧文件保持原样，不删除、不覆盖。
 5. **绑定目标**：默认选择 app。artifact identity 的正向 contract 是且只能来自统一配置中的这一组：
 
