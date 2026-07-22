@@ -1,0 +1,10 @@
+interface:
+  display_name: "Setup Embedded"
+  short_description: "安全构建、烧录并通过 EmbedLink MCP 调试固件"
+  default_prompt: "Use $setup-embedded to build and safely flash the application firmware, then verify it through EmbedLink MCP."
+
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "embedlink"
+      description: "EmbedLink MCP provides the only allowed UART debugging channel."
