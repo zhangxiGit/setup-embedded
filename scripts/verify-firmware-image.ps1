@@ -1,16 +1,3 @@
-param(
-    [AllowNull()][string]$ImagePath,
-    [AllowNull()][string]$Mode,
-    [AllowNull()][string]$BootStart,
-    [AllowNull()][string]$BootEndExclusive,
-    [AllowNull()][string]$AppStart,
-    [AllowNull()][string]$AppEndExclusive,
-    [switch]$AppStartEraseBoundaryConfirmed,
-    [string[]]$ExtraArguments,
-    [string]$LoadAddress,
-    [switch]$BootFlashConfirmed
-)
-
 $ErrorActionPreference = 'Stop'
 
 function Convert-ToUInt64([string]$Value) {
@@ -24,7 +11,8 @@ function Test-Overlap([UInt64]$AStart, [UInt64]$AEnd, [UInt64]$BStart, [UInt64]$
 }
 
 function Stop-Unsafe([string]$Message) {
-    [Console]::Error.WriteLine($Message)
+    $json = [ordered]@{ safe = $false; error = $Message } | ConvertTo-Json -Compress
+    [Console]::Error.WriteLine($json)
     exit 2
 }
 
@@ -100,8 +88,68 @@ function Merge-Ranges($Ranges) {
 }
 
 try {
-    if ($args.Count -ne 0) { Stop-Unsafe "Unexpected argument: $($args[0])" }
-    if ($ExtraArguments.Count -ne 0) { Stop-Unsafe "Unexpected argument: $($ExtraArguments[0])" }
+    $rawArguments = @($args)
+    $valueParameterNames = @('ImagePath', 'Mode', 'BootStart', 'BootEndExclusive', 'AppStart', 'AppEndExclusive', 'LoadAddress')
+    $switchParameterNames = @('AppStartEraseBoundaryConfirmed', 'BootFlashConfirmed')
+    $parsedArguments = @{}
+    $seenParameters = @{}
+
+    for ($index = 0; $index -lt $rawArguments.Count; $index++) {
+        $token = [string]$rawArguments[$index]
+        if (-not $token.StartsWith('-') -or $token.Length -eq 1) { Stop-Unsafe "Unexpected positional argument: $token" }
+
+        $parameterToken = $token.Substring(1)
+        $nameAndValue = @($parameterToken -split ':', 2)
+        $name = $nameAndValue[0]
+        $hasAttachedValue = $nameAndValue.Count -eq 2
+        $attachedValue = if ($hasAttachedValue) { $nameAndValue[1] } else { $null }
+
+        if ($valueParameterNames -contains $name) {
+            if ($seenParameters.ContainsKey($name)) { Stop-Unsafe "Duplicate parameter: $name" }
+            if ($hasAttachedValue) {
+                $value = $attachedValue
+            } else {
+                if ($index + 1 -ge $rawArguments.Count -or ([string]$rawArguments[$index + 1]).StartsWith('-')) {
+                    Stop-Unsafe "Missing value for parameter: $name"
+                }
+                $index++
+                $value = [string]$rawArguments[$index]
+            }
+            if ([string]::IsNullOrWhiteSpace($value)) { Stop-Unsafe "Missing value for parameter: $name" }
+            $seenParameters[$name] = $true
+            $parsedArguments[$name] = $value
+            continue
+        }
+
+        if ($switchParameterNames -contains $name) {
+            if ($seenParameters.ContainsKey($name)) { Stop-Unsafe "Duplicate parameter: $name" }
+            if (-not $hasAttachedValue) {
+                $switchValue = $true
+            } elseif ($attachedValue -in @('$true', 'true', '1')) {
+                $switchValue = $true
+            } elseif ($attachedValue -in @('$false', 'false', '0')) {
+                $switchValue = $false
+            } else {
+                Stop-Unsafe "Invalid switch syntax: $name"
+            }
+            $seenParameters[$name] = $true
+            $parsedArguments[$name] = $switchValue
+            continue
+        }
+
+        Stop-Unsafe "Unknown argument: $token"
+    }
+
+    $ImagePath = $parsedArguments['ImagePath']
+    $Mode = $parsedArguments['Mode']
+    $BootStart = $parsedArguments['BootStart']
+    $BootEndExclusive = $parsedArguments['BootEndExclusive']
+    $AppStart = $parsedArguments['AppStart']
+    $AppEndExclusive = $parsedArguments['AppEndExclusive']
+    $LoadAddress = $parsedArguments['LoadAddress']
+    $AppStartEraseBoundaryConfirmed = $parsedArguments.ContainsKey('AppStartEraseBoundaryConfirmed') -and $parsedArguments['AppStartEraseBoundaryConfirmed']
+    $BootFlashConfirmed = $parsedArguments.ContainsKey('BootFlashConfirmed') -and $parsedArguments['BootFlashConfirmed']
+
     foreach ($requiredParameter in @(
         @{ Name = 'ImagePath'; Value = $ImagePath },
         @{ Name = 'Mode'; Value = $Mode },

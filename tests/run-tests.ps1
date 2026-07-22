@@ -85,6 +85,21 @@ function Invoke-ImageTests {
     Assert-Exit (Invoke-GuardCommand $safeGuardArgs).ExitCode 0 'Valid safe invocation rejected'
     Assert-Exit (Invoke-GuardCommand ($safeGuardArgs + '-Bogus')).ExitCode 2 'Unknown named argument accepted'
     Assert-Exit (Invoke-GuardCommand ($safeGuardArgs + 'trailing-token')).ExitCode 2 'Trailing positional argument accepted'
+    $missingImageValue = Invoke-GuardCommand (@('-ImagePath', '-Mode', 'app') + $guardRanges + '-AppStartEraseBoundaryConfirmed')
+    Assert-Exit $missingImageValue.ExitCode 2 'Missing parameter value did not exit 2'
+    $missingImageJson = $missingImageValue.Output | ConvertFrom-Json
+    Assert-Equal $missingImageJson.safe $false 'Missing parameter value must return unsafe JSON'
+    Assert-Contains $missingImageJson.error 'ImagePath' 'Missing parameter value must identify ImagePath'
+    $invalidSwitch = Invoke-GuardCommand ($safeGuardArgs[0..($safeGuardArgs.Count - 2)] + '-AppStartEraseBoundaryConfirmed:notbool')
+    Assert-Exit $invalidSwitch.ExitCode 2 'Invalid switch syntax did not exit 2'
+    $invalidSwitchJson = $invalidSwitch.Output | ConvertFrom-Json
+    Assert-Equal $invalidSwitchJson.safe $false 'Invalid switch syntax must return unsafe JSON'
+    Assert-Equal ([string]::IsNullOrWhiteSpace($invalidSwitchJson.error)) $false 'Invalid switch syntax must return an error message'
+    $duplicateMode = Invoke-GuardCommand ($safeGuardArgs + @('-Mode', 'app'))
+    Assert-Exit $duplicateMode.ExitCode 2 'Duplicate parameter did not exit 2'
+    $duplicateModeJson = $duplicateMode.Output | ConvertFrom-Json
+    Assert-Equal $duplicateModeJson.safe $false 'Duplicate parameter must return unsafe JSON'
+    Assert-Contains $duplicateModeJson.error 'Mode' 'Duplicate parameter must identify Mode'
     $safeApp = Invoke-Guard (Join-Path $images 'app-safe.hex') -Boundary
     Assert-Exit $safeApp.ExitCode 0 'Safe app HEX rejected'
     $safeJson = $safeApp.Output | ConvertFrom-Json
