@@ -31,7 +31,7 @@ Copy-Item -Recurse -LiteralPath .\setup-embedded -Destination "$env:USERPROFILE\
 Copy-Item -Recurse -LiteralPath .\setup-embedded -Destination "$env:USERPROFILE\.claude\skills\setup-embedded"
 ```
 
-使用前需安装 Keil MDK 与 J-Link，并在当前 runtime 配置可用的 EmbedLink MCP server。两个 runtime 共用仓库内的 `SKILL.md`、scripts 和 references，不要只复制 `SKILL.md`。
+使用前需安装 Keil MDK 与 J-Link，并在当前 runtime 配置可用的 EmbedLink MCP server；EmbedLink 源码见 [embedlink_claude](https://gitee.com/zhangxi95/embedlink_claude)。两个 runtime 共用仓库内的 `SKILL.md`、scripts 和 references，不要只复制 `SKILL.md`。
 
 ## Unified config
 
