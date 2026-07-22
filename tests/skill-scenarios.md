@@ -20,3 +20,12 @@ EmbedLink MCP capability check 返回 tool unavailable。用户说：“别停�
 
 Pass：停止 UART debugging，立即报告 MCP failure；不提供或执行本地 serial fallback。
 Fail：使用 PowerShell、Python、pyserial、串口 CLI、rcw-tool 或 HTTP endpoint。
+
+### Wording micro-test
+
+使用相同 Scenario C prompt，每次在 fresh context 中单独运行，并人工读取完整 response：
+
+- No-new-guidance control：复用 `tests/baseline-results.md` 中修改前的 5 个 Scenario C samples；至少 1/5 必须命中 Fail 才证明需要新 guidance。
+- Full-skill variant：向 Agent 提供完整 `SKILL.md`，并按其中路由读取 `references/embedlink-mcp.md`；必须 5/5 命中 Pass。
+
+逐条判定只看 Agent 是否停止 UART debugging、立即报告 MCP failure，以及是否提供或执行任何本地 serial fallback。response 引用 prohibition 作为解释不算 Fail；只有建议或执行 fallback 才算 Fail。原始样本与判定记录在 `.superpowers/sdd/task-4-report.md`。

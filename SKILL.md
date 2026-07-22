@@ -1,243 +1,111 @@
 ---
 name: setup-embedded
-description: Use when developing, debugging, building, or flashing embedded firmware projects. Invoke with `/setup-embedded` — auto-detects if first-time setup is needed. Triggers on requests to compile, build, flash, or test firmware changes on hardware. Supports Keil MDK (ARMCC), GCC, J-Link, ST-Link, OpenOCD.
+description: Use when building, flashing, debugging, or hardware-testing Windows embedded firmware projects that use Keil MDK, J-Link, or EmbedLink MCP, especially repositories with separate bootloader and application projects.
 ---
 
-# 嵌入式固件开发调试闭环
+# Windows 嵌入式开发闭环
 
-## 加载后
+## 核心原则
 
-检查项目根目录的 `CLAUDE.md`（有则参考）和 `.claude/embedded-config.md`：
+首版仅处理 Windows、Keil MDK、J-Link 与 EmbedLink MCP UART。默认目标是配置明确绑定的 application；任何 project role、Flash layout、erase boundary、artifact identity 或 image range 不确定时都 fail closed。
 
-- **两者都不存在** → 配置向导：自动扫描工具链/调试器/工程文件 → 写入 `.claude/embedded-config.md`
-- **配置存在** → 读取配置，等待开发任务
+仅执行用户要求的阶段及其必要前置检查，不把 build 自动扩展为 flash，也不把 flash 自动扩展为 UART debugging。
 
-### rcw-tool 文档准备
+## 资源路由
 
-每次加载时确保 rcw-tool 使用文档是最新的（不含程序源码，仅文档）：
+- build 或 flash：读取 [references/keil-jlink.md](references/keil-jlink.md)。
+- debug、hardware test 或 full loop：读取 [references/embedlink-mcp.md](references/embedlink-mcp.md)。
+- 缺少统一配置或需要重新发现工程：运行 `scripts/discover-embedded.ps1`。
+- 每次调用 J-Link 前：运行 `scripts/verify-firmware-image.ps1`。
 
-```bash
-DOCS_DIR="$HOME/.claude/rcw-tool-docs"
-if [ -d "$DOCS_DIR/.git" ]; then
-  cd "$DOCS_DIR" && git pull --ff-only 2>/dev/null
-else
-  git clone --depth 1 --branch master https://gitee.com/zhangxi95/zxx-log.git "$DOCS_DIR" 2>/dev/null
-fi
-```
+## REQUIRED ordered workflow
 
-加载后读取 `$HOME/.claude/rcw-tool-docs/README.md` 了解 rcw-tool 实际用法（以 README 为准，非 requirement 文档）。
+按以下顺序执行，不跳过适用的 slot：
 
-### rcw-tool exe 路径
+1. **分类请求**：归类为 build、flash、debug、hardware test 或 full loop；不清楚时先确认范围。
+2. **读取项目约束与配置**：读取当前 runtime 适用的 `AGENTS.md` 和/或 `CLAUDE.md`，再读取 `.embedded/embedded-config.md`。
+3. **发现并确认候选**：缺少统一配置或配置不完整时，运行：
 
-- 优先读 `.claude/embedded-config.md` 中的 `rcw-tool路径` 字段
-- 若无，检查 `which rcw-tool 2>/dev/null`
-- 若都找不到，询问用户提供路径，写入配置
+   ```powershell
+   powershell -NoProfile -ExecutionPolicy Bypass -File scripts\discover-embedded.ps1 -ProjectRoot <workspace-absolute-path>
+   ```
 
----
+   展示 JSON 中每个 `.uvprojx`、target、`role_hint`、IROM range 与 `artifact_path`。自动发现只产生候选；让用户确认哪组是 boot、哪组是 app，以及对应 Flash layout，确认前不 build/flash。
+4. **处理 legacy config**：发现 `.Codex/embedded-config.md` 或 `.claude/embedded-config.md` 时，先展示可迁移字段并取得用户确认。只迁移有效的 Keil、J-Link、project、Flash layout 与 UART 参数；丢弃 `rcw-tool` 专属字段。新建 `.embedded/embedded-config.md`，旧文件保持原样，不删除、不覆盖。
+5. **绑定目标**：默认选择 app。artifact identity 的正向 contract 是且只能来自统一配置中的这一组：
 
-## 配置向导
+   ```text
+   Project = AppProject
+   Target = AppTarget
+   Artifact = AppArtifact
+   ```
 
-`.claude/embedded-config.md` 不存在时执行。每步先自动检测，检测不到才问用户。
+   build、freshness check、image guard 与 J-Link `loadfile` 必须沿用同一组绝对路径和 target。不得用全仓库或输出目录中修改时间最新的 HEX 替代 `AppArtifact`。
+6. **执行 build（如适用）**：按 Keil reference 构建 exact project/target，并同时验证 process exit 0、日志含 `0 Error(s)`、绑定 artifact 晚于本次 build 开始时间。
+7. **REQUIRED image guard（每次 flash 都适用）**：在创建 J-Link command file 或执行 `loadfile` 前，使用统一配置中的边界运行 `scripts/verify-firmware-image.ps1`。只有 process exit 0 且 JSON 为 `safe: true` 才能进入下一 slot；否则停止，不生成或提供绕过命令。
+8. **Boot mode gate**：仅当用户明确要求烧录 bootloader 时才可选择 `BootProject` / `BootTarget` / `BootArtifact`。运行前再次展示 artifact 与 boot range，取得第二次明确确认，再以 `-Mode boot -BootFlashConfirmed` 执行 guard。缺少任一确认即停止。
+9. **执行 J-Link flash（如适用）**：只对刚通过 guard 的 exact artifact 执行 Keil/J-Link reference 中的无 erase 流程。
+10. **执行 UART 操作（如适用）**：debug、hardware test 或 full loop 在首次 UART 操作前只做一次无副作用 EmbedLink MCP capability preflight；其余操作遵循 EmbedLink reference。MCP 失败时，最终用户报告必须逐字、按顺序使用 `阶段`、`MCP Tool`、`错误`、`已完成`、`未验证`、`用户操作建议` 六个字段名；不得用同义字段替换。
+11. **报告结果**：build、flash 与 hardware verification 分开报告。只有实际 EmbedLink MCP log evidence 能证明预期硬件行为时，才报告 hardware verification success。flash 已完成但 MCP 不可用时，报告“已烧录，但硬件行为尚未验证”。
 
-**扫描编译工具链：**
-```bash
-for d in C D E F; do
-  find "/$d" -maxdepth 4 -path "*/Keil*/UV4/UV4.exe" 2>/dev/null | head -1
-done
-which arm-none-eabi-gcc 2>/dev/null
-```
+## 统一配置 contract
 
-**扫描调试探针：**
-```bash
-for d in C D E F; do
-  find "/$d" -maxdepth 5 -path "*/Segger/JLink.exe" 2>/dev/null | head -1
-done
-which st-flash 2>/dev/null
-```
+Codex 与 Claude Code 共用 `.embedded/embedded-config.md`。地址使用十六进制；`connection_id` 是 runtime state，不写入文件。
 
-**扫描工程文件：** `find . -maxdepth 3 -name "*.uvprojx" -o -name "CMakeLists.txt"`
-
-**解析芯片型号：** 从 `.uvprojx` 的 `<Device>` 标签或 CMakeLists 的 `CMSIS COMPONENTS` 提取。
-
-**烧录接口：** 默认 SWD。
-
-**日志通道检测：**
-- UART：检查 CLAUDE.md 或 `general.h` 中有无 UART 引脚定义（`TX`/`RX`/`USART`），有则记录波特率
-- USB HID：检查源码中有无 `SUPPORT_REALTIME_LOG_PRINT`、`USB_REALTIME_LOG_ID`、VID/PID 定义
-- 检测不到：配置段保留空模板，等 rcw-tool 后续支持
-
-写入配置示例：
 ```markdown
-# 嵌入式调试配置
-## 编译
-- 工具: Keil
-- UV4路径: D:/Keil_v5/UV4/UV4.exe
-- 工程文件: Keil/xxx.uvprojx
-- HEX目录: Keil/
-## 烧录
-- 工具: JLink
-- JLink路径: D:/Keil_v5/ARM/Segger/JLink.exe
-- 芯片型号: STM32L452VC
-- 接口: SWD
-- 速度: 4000
-## Tool A 日志
-传输: USB_HID
-VID: 0x04D8
-PID: 0x0360
-日志msgID: 0x800E
-开日志: CONTROL_MSG
-rcw-tool路径: C:/Tools/rcw-tool/rcw-tool.exe
+# Embedded 开发配置
+
+## Build
+- Tool: Keil MDK
+- UV4Path: ...
+- AppProject: ...
+- AppTarget: ...
+- AppArtifact: ...
+- BootProject: ...
+- BootTarget: ...
+- BootArtifact: ...
+
+## FlashLayout
+- BootStart: 0x...
+- BootEndExclusive: 0x...
+- AppStart: 0x...
+- AppEndExclusive: 0x...
+- AppStartEraseBoundaryConfirmed: true
+
+## Flash
+- Tool: J-Link
+- JLinkPath: ...
+- Device: ...
+- Interface: SWD
+- SpeedKHz: 4000
+
+## Debug
+- Tool: EmbedLink MCP
+- Transport: UART
+- Port: ...
+- BaudRate: ...
+- DataBits: 8
+- StopBits: one
+- Parity: none
+- FlowControl: none
 ```
 
----
+配置值、discovery JSON、linker/scatter 信息或 image range 发生冲突时，展示冲突并请求用户修正或确认；不得自行选择一个来源继续 flash。
 
-## 开发闭环
+## 快速判定表
 
-### 编译
+| 条件 | 结果 |
+|---|---|
+| app project/target/artifact 未精确绑定 | 停止 build/flash，完成 discovery 与确认 |
+| build 三重验证任一失败 | 停止，不把 artifact 交给 guard |
+| guard 非 exit 0 或 `safe` 非 `true` | 停止，不创建 J-Link command file |
+| boot 未明确请求或缺少第二次确认 | 停止 boot flash |
+| EmbedLink MCP Tool 缺失或报错 | 立即停止 UART debugging 并按固定字段报告 |
+| 没有 MCP log evidence | 不报告 hardware verification success |
 
-```bash
-cd <项目根目录> && cmd //c "<UV4路径> -b <工程文件绝对路径> -j0 -o <项目根目录绝对路径>\build.log" 2>&1
-```
+## 常见错误
 
-日志 `build.log` 在项目根目录，确认含 "0 Error(s)"。
-
-> ARMCC5 增量编译不检测 `.h` 变更。如果改了 `.h` 文件后编译秒过但产物未更新：删 `.axf`/`.bin` 后用 `-r` rebuild。
-
-### 找烧录文件
-
-```bash
-ls -t <输出目录>/*.hex 2>/dev/null | head -1
-```
-
-### 烧录
-
-J-Link:
-```bash
-cat > flash.jlink << JLINKEOF
-device <芯片型号>
-si <接口>
-speed <速度>
-loadfile <HEX绝对路径>
-r
-g
-q
-JLINKEOF
-<JLink路径> -NoGui 1 -ExitOnError 1 -CommandFile flash.jlink
-rm flash.jlink
-```
-
-ST-Link: `st-flash --reset write <bin文件> 0x08000000`
-OpenOCD: `openocd -f interface/stlink.cfg -f target/<芯片>.cfg -c "program <hex> verify reset exit"`
-
-### 日志采集（rcw-tool）
-
-rcw-tool 是独立的日志采集工具。源码在 `https://gitee.com/zhangxi95/zxx-log.git`（master 分支 = 文档，程序在另一分支），文档缓存在 `~/.claude/rcw-tool-docs/`。
-
-exe 路径从 `.claude/embedded-config.md` 的 `rcw-tool路径` 读取。执行时用绝对路径：
-
-```bash
-RCWTOOL="<rcw-tool路径>"    # 从配置读取
-```
-
-#### 版本检查
-
-每次使用前检查 rcw-tool 是否最新：
-
-```bash
-cd ~/.claude/rcw-tool-docs && git pull --ff-only 2>/dev/null
-cat ~/.claude/rcw-tool-docs/CHANGELOG.md | head -20   # 查看最新版本
-```
-
-如果版本落后，告知用户更新。
-
-#### 启动采集
-
-```bash
-$RCWTOOL monitor &
-```
-
-- 读 `.claude/embedded-config.md` 的 `## Tool A 日志` 段确定传输层参数
-- 自动连接设备 + 写日志文件 + 启 Web UI（`http://localhost:8080`）
-- 提示用户打开浏览器实时观察
-- 如果设备刚烧录完/刚上电，monitor 会自动发 CONTROL_MSG 开启日志，第一行即为 `logDrvInit` 输出版本号
-
-#### 手动控制日志开关（关键）
-
-设备 `logDrvInit` 只执行一次（`gLogOnOff` 变为 1 后直接返回）。如果需重新抓取启动日志（含版本号）：
-
-```bash
-$RCWTOOL log off            # 关日志，重置 gLogOnOff=0
-$RCWTOOL log on             # 重开日志 → 触发 logDrvInit → 输出版本号
-```
-
-`log on/off` 独立于 monitor，不需要 monitor 在跑。
-
-#### 查看日志
-
-```bash
-$RCWTOOL tail -n 50               # 看最近日志
-$RCWTOOL tail -f                  # 实时追踪（另开终端，Ctrl+C 退出）
-$RCWTOOL grep "ERROR" -i -n 3     # 搜错误 + 上下文
-$RCWTOOL grep "<关键信息>" -i     # 验证改动是否生效
-$RCWTOOL grep "<关键信息>" -i --time 2m  # 最近2分钟内的匹配
-$RCWTOOL info                     # 确认采集状态
-```
-
-> 完整 CLI 参考见 `~/.claude/rcw-tool-docs/README.md`。
-
-#### 新一轮测试前
-
-```bash
-$RCWTOOL clear -f                 # 清旧日志，避免混淆
-```
-
-#### 停止采集
-
-```bash
-kill %1 或 pkill rcw-tool       # 停 monitor
-```
-
-### 完整闭环流程
-
-```
-1. 改代码
-2. 编译 → 确认 "0 Error(s)"
-3. 找 HEX → ls -t <HEX目录>/*.hex | head -1
-4. 烧录 → J-Link 确认 "O.K." 无 "Skipped"
-5. $RCWTOOL monitor &            # 启动日志采集
-6. $RCWTOOL log off && $RCWTOOL log on   # 重置日志，抓版本号
-7. $RCWTOOL tail -n 50           # 查看启动日志
-8. $RCWTOOL grep "关键词" -i     # 验证改动
-9. 没问题 → 报告用户验证结果
-   有问题 → 分析日志 → 改代码 → clear -f → 回到步骤2
-```
-
-### rcw-tool 问题反馈
-
-rcw-tool 本身有 bug 或功能不足时，**直接修改 rcw-tool 仓库的 CHANGELOG.md**（`E:\Elitech\Tools\ZxxLog\CHANGELOG.md`），按模板填充 BUG/FEAT 条目，然后 commit + push：
-
-```bash
-cd E:\Elitech\Tools\ZxxLog
-# 编辑 CHANGELOG.md 中对应的条目
-git add CHANGELOG.md && git commit -m "changelog: <简述>" && git push origin master
-```
-
-然后告知用户："CHANGELOG 有更新，请处理"，用户在 rcw-tool 终端说同样的话即可触发修复流程。
-
----
-
-## 故障排查
-
-| 现象 | 原因 | 处理 |
-|------|------|------|
-| 编译秒过但 HEX 没更新 | ARMCC5 增量编译不检测 `.h` 变更 | 删 .o/.axf/.bin，`-r` rebuild；验证 HEX 时间戳 > 源文件 |
-| J-Link 输出 `Skipped. Contents already match` | HEX 与 Flash 一致，未执行编程 | 说明改动未生效，回退检查编译产物是否真的更新了 |
-| 版本号改了但设备显示旧版本 | 编译产物实际未含新值 | `fromelf --text -s <target>.axf | grep <符号>` 查符号地址，grep HEX 验证字节 |
-| HEX 文件名含旧版本号 | post-build 脚本用 .bin 中的版本号命名 | 文件名仅供参考，用内容为准；或直接用编译中间产物 |
-| J-Link DAP 初始化失败 | 连接状态异常 | 设备断电再上电后重试 |
-| SWD 锁死 | 用户程序禁用 SWD 引脚 | BOOT0=1 上电 → 擦除 → BOOT0=0 |
-| rcw-tool 找不到设备 | USB 未插/VID:PID 不匹配 | 检查配置 + 设备连接 |
-| rcw-tool 采集无输出 | 日志未开启/`gLogOnOff` 已为 1 | 先 `rcw-tool log off` 再 `rcw-tool log on` 重置 |
-| rcw-tool monitor 启动失败 | exe 路径错误/端口占用 | 检查配置 `rcw-tool路径`；`taskkill //F //IM rcw-tool.exe` 清旧进程 |
-| rcw-tool log on 后仍无输出 | 设备需断电上电 | 设备 USB HID 状态异常，断电再上电后重试 |
-| 烧录后 HEX 没更新（Skipped） | 编译产物未变/增量编译 | 删 `.axf` `.bin` 后 `-r` rebuild，验证 HEX 时间戳 |
+- 把“app 目录里最新 HEX”当作目标：回到 `AppProject` / `AppTarget` / `AppArtifact` contract。
+- build 成功后直接 `loadfile`：补上 REQUIRED image guard slot，并向用户展示 safe JSON。
+- 用户催促时跳过确认：时间压力不改变 fail-closed gate。
+- MCP 故障后改用本地串口：立即停止并使用 EmbedLink reference 的错误报告格式。
