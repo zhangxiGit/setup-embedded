@@ -32,7 +32,8 @@ description: Use when building, flashing, debugging, or hardware-testing Windows
 
    展示 JSON 中每个 `.uvprojx`、target、`role_hint`、`range_sources`、`layout_status`、`layout_conflicts`、`effective_range` 与 `artifact_path`。`layout_status=conflict` 或 `role_hint=unknown` 时 fail closed：展示冲突并停止，不得写入统一配置或继续 build/flash。自动发现只产生候选；让用户确认哪组是 boot、哪组是 app，以及对应 Flash layout，确认前不 build/flash。
 4. **处理 legacy config**：发现 `.Codex/embedded-config.md` 或 `.claude/embedded-config.md` 时，先展示可迁移字段并取得用户确认。只迁移有效的 Keil、J-Link、project、Flash layout 与 UART 参数，并补入固定 `## EmbedLink` service metadata；丢弃 `rcw-tool` 专属字段。新建 `.embedded/embedded-config.md`，旧文件保持原样，不删除、不覆盖。
-5. **绑定目标**：默认选择 app。artifact identity 的正向 contract 是且只能来自统一配置中的这一组：
+5. **MCP 工作流门控（MCP workflow gate）**：仅当请求分类为 debug、hardware test 或 full loop 时执行，并且必须在绑定目标、build、flash 或 UART 前完成。先检查当前 runtime 暴露的 EmbedLink MCP tool inventory；Tool 未暴露时按 EmbedLink reference 的固定六字段报告停止整个请求，不执行 build/flash/UART。Tool 已暴露时只执行一次无副作用 capability preflight；preflight 失败同样停止整个请求。build-only / flash-only 跳过此门控；分类不清或无法确定是否涉及 MCP 时，先确认范围，不假设也不继续。
+6. **绑定目标**：默认选择 app。artifact identity 的正向 contract 是且只能来自统一配置中的这一组：
 
    ```text
    Project = AppProject
@@ -41,12 +42,12 @@ description: Use when building, flashing, debugging, or hardware-testing Windows
    ```
 
    build、freshness check、image guard 与 J-Link `loadfile` 必须沿用同一组绝对路径和 target。不得用全仓库或输出目录中修改时间最新的 HEX 替代 `AppArtifact`。
-6. **执行 build（如适用）**：按 Keil reference 构建 exact project/target，并同时验证 process exit 0、日志含 `0 Error(s)`、绑定 artifact 晚于本次 build 开始时间。
-7. **REQUIRED image guard（每次 flash 都适用）**：在创建 J-Link command file 或执行 `loadfile` 前，使用统一配置中的边界运行 `scripts/verify-firmware-image.ps1`。只有 process exit 0 且 JSON 为 `safe: true` 才能进入下一 slot；否则停止，不生成或提供绕过命令。
-8. **Boot mode gate**：仅当用户明确要求烧录 bootloader 时才可选择 `BootProject` / `BootTarget` / `BootArtifact`。运行前再次展示 artifact 与 boot range，取得第二次明确确认，再以 `-Mode boot -BootFlashConfirmed` 执行 guard。缺少任一确认即停止。
-9. **执行 J-Link flash（如适用）**：只对刚通过 guard 的 exact artifact 执行 Keil/J-Link reference 中的无 erase 流程。
-10. **执行 UART 操作（如适用）**：debug、hardware test 或 full loop 在首次 UART 操作前先检查当前 runtime 暴露的 EmbedLink MCP tool inventory，再遵循 EmbedLink reference 的 runtime 分支。`Runtime order: inspect tool inventory first.` `Tool available: no startup or new-session prompt.` Tool 已暴露时只做一次无副作用 capability preflight；Tool 未暴露时停止 UART 阶段，提示用户启动 EmbedLink，并按 Claude Code / Codex 分支处理。MCP 失败时，最终用户报告必须逐字、按顺序使用 `阶段`、`MCP Tool`、`错误`、`已完成`、`未验证`、`用户操作建议` 六个字段名；不得用同义字段替换。
-11. **报告结果**：build、flash 与 hardware verification 分开报告。只有实际 EmbedLink MCP log evidence 能证明预期硬件行为时，才报告 hardware verification success。flash 已完成但 MCP 不可用时，报告“已烧录，但硬件行为尚未验证”。
+7. **执行 build（如适用）**：按 Keil reference 构建 exact project/target，并同时验证 process exit 0、日志含 `0 Error(s)`、绑定 artifact 晚于本次 build 开始时间。
+8. **REQUIRED image guard（每次 flash 都适用）**：在创建 J-Link command file 或执行 `loadfile` 前，使用统一配置中的边界运行 `scripts/verify-firmware-image.ps1`。只有 process exit 0 且 JSON 为 `safe: true` 才能进入下一 slot；否则停止，不生成或提供绕过命令。
+9. **Boot mode gate**：仅当用户明确要求烧录 bootloader 时才可选择 `BootProject` / `BootTarget` / `BootArtifact`。运行前再次展示 artifact 与 boot range，取得第二次明确确认，再以 `-Mode boot -BootFlashConfirmed` 执行 guard。缺少任一确认即停止。
+10. **执行 J-Link flash（如适用）**：只对刚通过 guard 的 exact artifact 执行 Keil/J-Link reference 中的无 erase 流程。
+11. **执行 UART 操作（如适用）**：debug、hardware test 或 full loop 只能复用本请求在第 5 步已成功完成的 MCP 工作流门控；不重新检查 tool inventory，也不执行第二次 capability preflight。`Runtime order: inspect tool inventory first.` `Tool available: no startup or new-session prompt.` 若第 5 步没有成功完成，停止整个请求，不执行 UART。后续 UART MCP 调用失败时，最终用户报告必须逐字、按顺序使用 `阶段`、`MCP Tool`、`错误`、`已完成`、`未验证`、`用户操作建议` 六个字段名；不得用同义字段替换。
+12. **报告结果**：build、flash 与 hardware verification 分开报告。只有实际 EmbedLink MCP log evidence 能证明预期硬件行为时，才报告 hardware verification success。flash 已完成但 MCP 不可用时，报告“已烧录，但硬件行为尚未验证”。
 
 ## 统一配置 contract
 
@@ -106,8 +107,9 @@ Codex 与 Claude Code 共用 `.embedded/embedded-config.md`。地址使用十六
 | build 三重验证任一失败 | 停止，不把 artifact 交给 guard |
 | guard 非 exit 0 或 `safe` 非 `true` | 停止，不创建 J-Link command file |
 | boot 未明确请求或缺少第二次确认 | 停止 boot flash |
-| EmbedLink MCP Tool 未暴露 | 停止 UART debugging，提示启动 EmbedLink，并按 runtime 分支处理 |
-| EmbedLink MCP Tool 已暴露但 preflight 报错 | 立即停止 UART debugging 并按固定字段报告 |
+| 工作流涉及 EmbedLink MCP 且 MCP Tool 未暴露 | 停止整个工作流，不进入 build/flash/UART；按 runtime 分支报告 |
+| 工作流涉及 EmbedLink MCP 且 capability preflight 报错 | 停止整个工作流，不进入 build/flash/UART；按固定字段报告 |
+| build-only / flash-only 且 MCP 未暴露 | 不因此阻塞 |
 | 没有 MCP log evidence | 不报告 hardware verification success |
 
 ## 常见错误
@@ -115,4 +117,6 @@ Codex 与 Claude Code 共用 `.embedded/embedded-config.md`。地址使用十六
 - 把“app 目录里最新 HEX”当作目标：回到 `AppProject` / `AppTarget` / `AppArtifact` contract。
 - build 成功后直接 `loadfile`：补上 REQUIRED image guard slot，并向用户展示 safe JSON。
 - 用户催促时跳过确认：时间压力不改变 fail-closed gate。
+- 把 full loop 拆成独立阶段顺序执行，未先完成 MCP 工作流门控：回到第 5 步；MCP 未确认可用前不得 build/flash。
+- MCP 未确认可用时先执行 build/flash：停止；先完成 MCP workflow gate，避免后续 UART 阶段无法收尾。
 - MCP 故障后改用本地串口：立即停止并使用 EmbedLink reference 的错误报告格式。

@@ -2,7 +2,7 @@
 
 ## 适用范围
 
-debug、hardware test 与 full loop 的 UART port list、connect、disconnect、send、log query 只能通过 EmbedLink MCP Tool 完成。build 与 J-Link flash 不需要 EmbedLink MCP，也不得隐式启动 UART 操作。
+debug、hardware test 与 full loop 的 UART port list、connect、disconnect、send、log query 只能通过 EmbedLink MCP Tool 完成。独立的 build-only 与 flash-only 不需要 EmbedLink MCP，也不得隐式启动 UART 操作；full loop 则必须先通过本 reference 的 MCP gate，才可进入其 build/flash 阶段。
 
 ## Runtime tool contract
 
@@ -21,13 +21,25 @@ logical operations：
 
 ## Runtime prerequisite gate
 
-只在 debug、hardware test 或 full loop 的首次 UART 操作前执行本 gate。若用户仅请求 build 或 flash，不检查 EmbedLink，也不执行 capability preflight。
+任何涉及 EmbedLink MCP 的工作流，必须先确认 Tool 已暴露且 capability preflight 通过，才能执行该工作流的其他阶段。该 gate 是工作流入口门控，不是仅在 UART 前执行的检查。
+
+| 请求分类 | MCP 检查时机 | Tool 未暴露或 preflight 失败时的处理 |
+|---|---|---|
+| build-only / flash-only | 不检查 | 不因此阻塞 |
+| debug / hardware test | 工作流开始 | 停止整个请求 |
+| full loop | build 前 | 停止整个 full loop，不进入 build/flash/UART |
+| 分类不清或涉及 MCP 但无法确定阶段 | 先确认范围 | 停止，不假设 |
+
+`Full loop: complete this gate before build, flash, or UART.`
+
+`Build-only and flash-only: skip this gate.`
 
 `Runtime order: inspect tool inventory first.`
 
-1. 先检查当前 runtime 实际暴露的 tool inventory，不猜测 Tool name，也不把 HTTP endpoint 当成 MCP Tool。
+1. 在 debug、hardware test 或 full loop 的入口先检查当前 runtime 实际暴露的 tool inventory，不猜测 Tool name，也不把 HTTP endpoint 当成 MCP Tool。
 2. Tool 已暴露时，执行一次无副作用 capability preflight 并继续。`Tool available: no startup or new-session prompt.`
-3. Tool 未暴露时，停止当前 UART 阶段，提示用户启动 EmbedLink，然后按当前 runtime 执行以下分支。
+3. Tool 未暴露或 capability preflight 失败时，停止整个 MCP 工作流；full loop 不得进入 build/flash/UART。Tool 未暴露时提示用户启动 EmbedLink，然后按当前 runtime 执行以下分支。
+4. 成功的 gate 只在当前请求中有效。`Reuse the completed gate at the UART slot; do not run another preflight.`
 
 ### Claude Code：Tool 未暴露
 
@@ -35,7 +47,7 @@ logical operations：
 
 `Action: start EmbedLink, create new Claude Code session, stop.`
 
-明确告知用户先启动 EmbedLink，再新建 Claude Code 会话，并在新会话中重新发起 debug、hardware test 或 full loop 请求。当前会话不继续 UART debugging，也不重试 MCP 调用。Tool 已暴露时不得显示这条新会话提示。
+明确告知用户先启动 EmbedLink，再新建 Claude Code 会话，并在新会话中重新发起 debug、hardware test 或 full loop 请求。当前会话不继续该 MCP 工作流，也不重试 MCP 调用。Tool 已暴露时不得显示这条新会话提示。
 
 ### Codex：Tool 未暴露
 
@@ -44,7 +56,7 @@ logical operations：
 先提示用户启动 EmbedLink。只有用户明确确认 EmbedLink 已启动后，才在当前任务中 `recheck tool inventory once`：
 
 - Tool 出现：执行一次无副作用 capability preflight 并继续。
-- `still unavailable: create a new Codex task`，提示用户在新任务中重试并停止当前 UART 阶段。
+- `still unavailable: create a new Codex task`，提示用户在新任务中重试并停止当前 MCP 工作流；full loop 不进入 build/flash/UART。
 
 `Do not loop inventory checks.` 这次用户动作后的 inventory recheck 不是同一 MCP call 的 retry；不得反复轮询，也不得在用户确认前检查。
 
@@ -62,7 +74,7 @@ logical operations：
 
 ## MCP-only 边界
 
-EmbedLink MCP Tool 未暴露时执行上述 runtime 分支；capability preflight 或后续 MCP 调用发生 schema 不匹配、返回错误或超时后，立即停止 UART debugging 并报告。不得：
+EmbedLink MCP Tool 未暴露时执行上述 runtime 分支；capability preflight 发生 schema 不匹配、返回错误或超时后，立即停止整个 MCP 工作流。若请求是 full loop，不得进入 build/flash/UART。后续 UART MCP 调用发生错误时，立即停止 UART debugging 并报告。不得：
 
 - 自动 retry 同一 MCP 调用；
 - 由 Agent 启动、重启或修复 EmbedLink；

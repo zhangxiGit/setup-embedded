@@ -103,11 +103,13 @@ Without actual EmbedLink MCP log evidence, the skill does not claim that hardwar
 
 ## EmbedLink detection and session behavior
 
-When UART is required, the skill first checks whether the current runtime already exposes the EmbedLink MCP tools:
+Any workflow that uses EmbedLink MCP first checks whether the current runtime already exposes the EmbedLink MCP tools. Other stages start only after capability preflight succeeds:
 
 - Tool available: run one side-effect-free capability preflight without prompting for EmbedLink startup or a new session.
 - Tool unavailable in Claude Code: ask the user to start EmbedLink and retry in a new Claude Code session.
 - Tool unavailable in Codex: ask the user to start EmbedLink; after confirmation, recheck the tool inventory once. Ask for a new Codex task only if the tool is still unavailable.
+
+For a full loop, this gate completes before build. If the MCP tool is unavailable or preflight fails, the entire full loop stops before build, flash, or UART. Build-only and flash-only requests do not require MCP and are not blocked.
 
 The agent does not start, restart, or repair EmbedLink. It stops the UART stage and informs the user when MCP is unavailable.
 

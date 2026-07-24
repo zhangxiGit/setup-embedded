@@ -103,11 +103,13 @@ UART 操作只通过 EmbedLink MCP Tool 完成。Agent 不会使用 PowerShell�
 
 ## EmbedLink 检测与会话行为
 
-需要 UART 时，Skill 首先检查当前 runtime 是否已经暴露 EmbedLink MCP Tool：
+任何涉及 EmbedLink MCP 的工作流都会先检查当前 runtime 是否已经暴露 EmbedLink MCP Tool，并在 capability preflight 通过后才执行其他阶段：
 
 - Tool 已暴露：执行一次无副作用 capability preflight，不提示启动 EmbedLink 或新会话。
 - Claude Code 未暴露 Tool：提示启动 EmbedLink，并新建 Claude Code 会话后重试。
 - Codex 未暴露 Tool：提示启动 EmbedLink；用户确认启动后只重新检查一次 tool inventory，仍未暴露才提示新建 Codex 任务。
+
+对 full loop，这个 gate 在 build 前完成；MCP 未暴露或 preflight 失败时，整个 full loop 停止，不进入 build、flash 或 UART。build-only / flash-only 不需要 MCP，不因此阻塞。
 
 Agent 不会自行启动、重启或修复 EmbedLink。MCP 异常时会停止 UART 阶段并及时告知用户。
 
