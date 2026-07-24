@@ -1,1 +1,0 @@
-LR_IROM1 not-an-address not-a-size { ER_IROM1 0x08004000 0x0003C000 { .ANY (+RO) } }

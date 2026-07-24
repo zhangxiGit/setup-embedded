@@ -1,55 +1,127 @@
-# setup-embedded — Codex / Claude Code 嵌入式开发 Skill
+# setup-embedded
 
-`setup-embedded` 为 Codex 与 Claude Code 提供同一套 **Build → Flash → UART verification** 工作流。Codex 中使用 `$setup-embedded`，Claude Code 中使用 `/setup-embedded`。
+中文 | [English](README_EN.md)
 
-## 当前支持范围
+面向 Codex 与 Claude Code 的 Windows 嵌入式开发 Skill，提供安全、可审计的 **Build → Flash → UART verification** 工作流。
 
-- OS：Windows
-- Build：Keil MDK (`UV4.exe`)
-- Flash：SEGGER J-Link (`JLink.exe`)
-- Debug：仅通过 EmbedLink MCP 执行 UART list/connect/disconnect/send/query
+默认只处理配置明确绑定的 application firmware。烧录前会校验 artifact identity 与 Flash address range，避免 app image 覆盖 bootloader。UART 调试只允许通过 EmbedLink MCP 完成。
 
-当前版本不承诺 GCC、ST-Link、OpenOCD、USB HID 或 MQTT 的完整支持。Build 与 flash 使用本地 Keil/J-Link；UART debugging 不使用 PowerShell、Python、serial CLI 或其他 fallback。
+## 核心能力
 
-## Flash safety
+- 精确构建 `.embedded/embedded-config.md` 绑定的 Keil project、target 与 artifact。
+- 每次 J-Link flash 前检查 HEX/BIN 的实际地址范围。
+- 默认禁止 bootloader flash；只有明确请求并二次确认后才允许执行。
+- 禁止按修改时间选择 newest HEX，避免误烧录其他 project 的产物。
+- 通过 EmbedLink MCP 执行 UART list、connect、send、query 与 disconnect。
+- Codex 与 Claude Code 共用同一份 project config 和安全规则。
 
-默认只构建和烧录 `.embedded/embedded-config.md` 明确绑定的 app project、target 与 artifact，不按修改时间选择 newest HEX。烧录 bootloader 必须由用户明确请求，并在执行前再次确认 boot artifact 与 address range。
+## 支持范围
 
-任何 J-Link `loadfile` 之前都必须运行 `scripts/verify-firmware-image.ps1`。只有 process exit code 为 `0` 且 JSON 中 `safe: true` 时才允许继续；bootloader overlap、range conflict、erase boundary 未确认或 artifact identity 不确定时均 fail closed。
+| 项目 | 当前支持 |
+|---|---|
+| OS | Windows |
+| Build | Keil MDK / `UV4.exe` |
+| Flash | SEGGER J-Link / `JLink.exe` |
+| Firmware | Intel HEX、BIN |
+| Debug transport | EmbedLink MCP UART |
+| Agent runtime | Codex、Claude Code |
+
+GCC、ST-Link、OpenOCD、USB HID 与 MQTT 暂不属于完整支持范围。
+
+## 前置条件
+
+- 已安装 Keil MDK，并能定位 `UV4.exe`。
+- 已安装 SEGGER J-Link，并能定位 `JLink.exe`。
+- 需要 UART debugging、hardware test 或 full loop 时，安装并启动 [EmbedLink](https://gitee.com/zhangxi95/embedlink_claude)，同时在当前 Agent runtime 中配置其 MCP server。
+- 仅执行 build 或 flash 时不需要启动 EmbedLink。
 
 ## 安装
 
-克隆仓库后，把完整 skill 目录复制到对应 runtime：
+### Codex
 
 ```powershell
-git clone https://github.com/zhangxiGit/setup-embedded.git
-
-# Codex
-Copy-Item -Recurse -LiteralPath .\setup-embedded -Destination "$env:USERPROFILE\.codex\skills\setup-embedded"
-
-# Claude Code
-Copy-Item -Recurse -LiteralPath .\setup-embedded -Destination "$env:USERPROFILE\.claude\skills\setup-embedded"
+git clone https://github.com/zhangxiGit/setup-embedded.git `
+  "$env:USERPROFILE\.codex\skills\setup-embedded"
 ```
 
-使用前需安装 Keil MDK 与 J-Link，并在当前 runtime 配置可用的 EmbedLink MCP server；EmbedLink 源码见 [embedlink_claude](https://gitee.com/zhangxi95/embedlink_claude)。两个 runtime 共用仓库内的 `SKILL.md`、scripts 和 references，不要只复制 `SKILL.md`。
+安装或更新后，建议新建 Codex 任务，以确保加载最新 Skill。
 
-## EmbedLink 会话检测
+### Claude Code
 
-`Detect current EmbedLink MCP Tool before prompting.`
+```powershell
+git clone https://github.com/zhangxiGit/setup-embedded.git `
+  "$env:USERPROFILE\.claude\skills\setup-embedded"
+```
 
-debug、hardware test 或 full loop 会先检测当前 runtime 是否已经暴露所需 EmbedLink MCP Tool：
+安装或更新后，新建 Claude Code 会话。
 
-- Tool 已暴露：直接执行无副作用 capability preflight，不提示启动 EmbedLink，也不提示新建会话。
-- Claude Code 中 Tool 未暴露：提示启动 EmbedLink，并新建 Claude Code 会话后重试。Claude Code 只有在检测失败时才需要新会话。
-- Codex 中 Tool 未暴露：提示启动 EmbedLink；用户确认启动后在当前任务中只重新检查一次 tool inventory。仍未暴露时，才提示新建 Codex 任务。
+已有安装可通过以下命令更新：
 
-Agent 不会自行启动或重启 EmbedLink，也不会通过 HTTP、PowerShell、Python、serial CLI 或直接 COM access 绕过 MCP。MCP 异常时会及时停止 UART 阶段并告知用户。
+```powershell
+git -C <setup-embedded-install-path> pull
+```
 
-## Unified config
+## 使用
 
-Codex 与 Claude Code 共用项目根目录下的 `.embedded/embedded-config.md`。该文件绑定 exact `AppProject` / `AppTarget` / `AppArtifact`、boot project/artifact、Flash layout、J-Link 参数与 EmbedLink MCP UART 参数；`connection_id` 属于 runtime state，不写入配置。
+Codex：
 
-统一配置还必须包含：
+```text
+$setup-embedded 编译并安全烧录 app，然后通过 UART 验证启动日志。
+```
+
+Claude Code：
+
+```text
+/setup-embedded 编译并安全烧录 app，然后通过 UART 验证启动日志。
+```
+
+Skill 会先判断请求属于 build、flash、debug、hardware test 或 full loop，只执行用户要求的阶段及其必要检查。
+
+## 工作流
+
+### Build
+
+1. 读取 `.embedded/embedded-config.md`。
+2. 使用 exact `AppProject` 与 `AppTarget` 调用 Keil。
+3. 同时验证 process exit code、`0 Error(s)` 与 bound artifact freshness。
+4. 后续步骤始终沿用 exact `AppArtifact`。
+
+### Flash
+
+1. 每次调用 J-Link 前运行 `scripts/verify-firmware-image.ps1`。
+2. 验证 image range 位于已确认的 application Flash range 内。
+3. 只有 guard exit code 为 `0` 且 JSON 为 `safe: true` 才继续。
+4. J-Link command 不使用 chip erase、mass erase 或 `erase`。
+
+如果用户明确要求烧录 bootloader，Skill 会再次展示 boot artifact 与 address range，并要求第二次明确确认。
+
+### UART verification
+
+UART 操作只通过 EmbedLink MCP Tool 完成。Agent 不会使用 PowerShell、Python、`pyserial`、serial CLI、HTTP endpoint 或直接 COM access 作为 fallback。
+
+没有实际 EmbedLink MCP log evidence 时，Skill 不会声称 hardware verification 已成功。即使 flash 已完成，也只会报告“已烧录，但硬件行为尚未验证”。
+
+## EmbedLink 检测与会话行为
+
+需要 UART 时，Skill 首先检查当前 runtime 是否已经暴露 EmbedLink MCP Tool：
+
+- Tool 已暴露：执行一次无副作用 capability preflight，不提示启动 EmbedLink 或新会话。
+- Claude Code 未暴露 Tool：提示启动 EmbedLink，并新建 Claude Code 会话后重试。
+- Codex 未暴露 Tool：提示启动 EmbedLink；用户确认启动后只重新检查一次 tool inventory，仍未暴露才提示新建 Codex 任务。
+
+Agent 不会自行启动、重启或修复 EmbedLink。MCP 异常时会停止 UART 阶段并及时告知用户。
+
+## 项目配置
+
+Codex 与 Claude Code 共用项目根目录下的：
+
+```text
+.embedded/embedded-config.md
+```
+
+首次发现 project 或迁移 legacy config 时，Skill 会展示候选内容并等待用户确认，不会静默选择 boot/app target 或覆盖旧文件。
+
+配置必须包含 EmbedLink service metadata：
 
 ```markdown
 ## EmbedLink
@@ -57,13 +129,27 @@ Codex 与 Claude Code 共用项目根目录下的 `.embedded/embedded-config.md`
 - MCP端点: http://127.0.0.1:3000/mcp
 ```
 
-这两个 URL 只供配置记录和人工排障，Agent 不会直接请求它们；可调用能力以当前 runtime 暴露的 MCP Tool 与 input schema 为准。
+这些 URL 只用于配置记录和人工排障，不授权 Agent 直接访问 HTTP endpoint。`connection_id` 属于 runtime state，不写入 config。
 
-如果项目只有 legacy `.Codex/embedded-config.md` 或 `.claude/embedded-config.md`，skill 会先展示可迁移字段并请求确认，再创建包含 `## EmbedLink` section 的 `.embedded/embedded-config.md`。迁移保留旧文件，不删除、不覆盖；`rcw-tool` 专属 fields 不迁移。已有统一配置缺少该 section 时，仅在需要 EmbedLink 的工作流中提示用户确认补全。
+## 发行目录
 
-## Validation limit
+```text
+setup-embedded/
+├── .gitignore
+├── SKILL.md
+├── README.md
+├── README_EN.md
+├── agents/
+│   └── openai.yaml
+├── references/
+│   ├── embedlink-mcp.md
+│   └── keil-jlink.md
+└── scripts/
+    ├── discover-embedded.ps1
+    └── verify-firmware-image.ps1
+```
 
-没有 live EmbedLink MCP runtime 时，只能验证 discovery、build/flash safety scripts、MCP contract 与 failure behavior。在没有实际 EmbedLink MCP log evidence 时，不能声称 hardware 或 UART verification 已成功；flash 已完成时应报告“已烧录，但硬件行为尚未验证”。
+仓库只发布 Skill 运行与使用所需文件，不包含内部测试结果或设计过程文档。
 
 ## License
 
@@ -71,4 +157,4 @@ MIT
 
 ## Author
 
-zhangxiGit — 与 Claude Code 协作开发
+zhangxiGit
