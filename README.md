@@ -33,11 +33,33 @@ Copy-Item -Recurse -LiteralPath .\setup-embedded -Destination "$env:USERPROFILE\
 
 使用前需安装 Keil MDK 与 J-Link，并在当前 runtime 配置可用的 EmbedLink MCP server；EmbedLink 源码见 [embedlink_claude](https://gitee.com/zhangxi95/embedlink_claude)。两个 runtime 共用仓库内的 `SKILL.md`、scripts 和 references，不要只复制 `SKILL.md`。
 
+## EmbedLink 会话检测
+
+`Detect current EmbedLink MCP Tool before prompting.`
+
+debug、hardware test 或 full loop 会先检测当前 runtime 是否已经暴露所需 EmbedLink MCP Tool：
+
+- Tool 已暴露：直接执行无副作用 capability preflight，不提示启动 EmbedLink，也不提示新建会话。
+- Claude Code 中 Tool 未暴露：提示启动 EmbedLink，并新建 Claude Code 会话后重试。Claude Code 只有在检测失败时才需要新会话。
+- Codex 中 Tool 未暴露：提示启动 EmbedLink；用户确认启动后在当前任务中只重新检查一次 tool inventory。仍未暴露时，才提示新建 Codex 任务。
+
+Agent 不会自行启动或重启 EmbedLink，也不会通过 HTTP、PowerShell、Python、serial CLI 或直接 COM access 绕过 MCP。MCP 异常时会及时停止 UART 阶段并告知用户。
+
 ## Unified config
 
 Codex 与 Claude Code 共用项目根目录下的 `.embedded/embedded-config.md`。该文件绑定 exact `AppProject` / `AppTarget` / `AppArtifact`、boot project/artifact、Flash layout、J-Link 参数与 EmbedLink MCP UART 参数；`connection_id` 属于 runtime state，不写入配置。
 
-如果项目只有 legacy `.Codex/embedded-config.md` 或 `.claude/embedded-config.md`，skill 会先展示可迁移字段并请求确认，再创建新的 `.embedded/embedded-config.md`。迁移保留旧文件，不删除、不覆盖；`rcw-tool` 专属 fields 不迁移。
+统一配置还必须包含：
+
+```markdown
+## EmbedLink
+- 状态检查: http://127.0.0.1:3000/health
+- MCP端点: http://127.0.0.1:3000/mcp
+```
+
+这两个 URL 只供配置记录和人工排障，Agent 不会直接请求它们；可调用能力以当前 runtime 暴露的 MCP Tool 与 input schema 为准。
+
+如果项目只有 legacy `.Codex/embedded-config.md` 或 `.claude/embedded-config.md`，skill 会先展示可迁移字段并请求确认，再创建包含 `## EmbedLink` section 的 `.embedded/embedded-config.md`。迁移保留旧文件，不删除、不覆盖；`rcw-tool` 专属 fields 不迁移。已有统一配置缺少该 section 时，仅在需要 EmbedLink 的工作流中提示用户确认补全。
 
 ## Validation limit
 

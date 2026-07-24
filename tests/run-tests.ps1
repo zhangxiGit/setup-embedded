@@ -1,4 +1,4 @@
-param([ValidateSet('all','discovery','image')][string]$Case = 'all')
+param([ValidateSet('all','discovery','image','contract')][string]$Case = 'all')
 
 $ErrorActionPreference = 'Stop'
 $RepoRoot = Split-Path -Parent $PSScriptRoot
@@ -13,6 +13,10 @@ function Assert-Exit([int]$Actual, [int]$Expected, [string]$Message) {
 
 function Assert-Contains([string]$Actual, [string]$Expected, [string]$Message) {
     if (-not $Actual.Contains($Expected)) { throw "$Message; missing '$Expected' in '$Actual'" }
+}
+
+function Assert-NotContains([string]$Actual, [string]$Unexpected, [string]$Message) {
+    if ($Actual.Contains($Unexpected)) { throw "$Message; unexpected '$Unexpected' in '$Actual'" }
 }
 
 function Invoke-Discovery([string]$FixtureName) {
@@ -197,6 +201,35 @@ function Invoke-ImageTests {
     Assert-Equal $segmentJson.ranges[0].start '0x00084000' 'Type 02 range start mismatch'
 }
 
+function Invoke-ContractTests {
+    $skill = Get-Content -LiteralPath (Join-Path $RepoRoot 'SKILL.md') -Raw -Encoding UTF8
+    $reference = Get-Content -LiteralPath (Join-Path $RepoRoot 'references\embedlink-mcp.md') -Raw -Encoding UTF8
+    $readme = Get-Content -LiteralPath (Join-Path $RepoRoot 'README.md') -Raw -Encoding UTF8
+    $statusCheck = [regex]::Unescape('\u72b6\u6001\u68c0\u67e5')
+    $mcpEndpoint = [regex]::Unescape('\u7aef\u70b9')
+
+    Assert-Contains $skill 'Runtime order: inspect tool inventory first.' 'Tool inventory check must precede EmbedLink guidance'
+    Assert-Contains $skill 'Tool available: no startup or new-session prompt.' 'Available Tool must not trigger restart guidance'
+    Assert-Contains $skill '## EmbedLink' 'Unified config template must include EmbedLink section'
+    Assert-Contains $skill "- ${statusCheck}: http://127.0.0.1:3000/health" 'EmbedLink health metadata missing'
+    Assert-Contains $skill "- MCP${mcpEndpoint}: http://127.0.0.1:3000/mcp" 'EmbedLink MCP endpoint missing'
+
+    Assert-Contains $reference 'Runtime: Claude Code; Tool: unavailable' 'Claude Code runtime branch missing'
+    Assert-Contains $reference 'Action: start EmbedLink, create new Claude Code session, stop.' 'Claude Code missing Tool must require a new session'
+    Assert-Contains $reference 'Runtime: Codex; Tool: unavailable' 'Codex runtime branch missing'
+    Assert-Contains $reference 'recheck tool inventory once' 'Codex one-time inventory recheck missing'
+    Assert-Contains $reference 'still unavailable: create a new Codex task' 'Codex must defer new-task guidance until recheck fails'
+    Assert-Contains $reference 'Do not loop inventory checks.' 'Codex inventory recheck must not loop'
+    Assert-Contains $reference 'URLs are configuration and manual troubleshooting metadata only.' 'EmbedLink URLs must be informational only'
+    Assert-Contains $reference 'Agent must not request these HTTP endpoints directly.' 'Agent HTTP access must remain forbidden'
+
+    Assert-Contains $readme '## EmbedLink' 'README config example must include EmbedLink section'
+    Assert-Contains $readme 'Detect current EmbedLink MCP Tool before prompting.' 'README must explain detect-before-prompt behavior'
+    Assert-NotContains $readme 'Always create a new Claude Code session.' 'README must not require unconditional Claude Code restart'
+}
+
 if ($Case -in @('all','discovery')) { Invoke-DiscoveryTests }
 if ($Case -in @('all','image')) { Invoke-ImageTests }
+if ($Case -in @('all','contract')) { Invoke-ContractTests }
+if ($Case -eq 'contract') { 'Contract tests passed' }
 if ($Case -eq 'all') { 'All tests passed' }

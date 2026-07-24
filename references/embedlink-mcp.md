@@ -19,14 +19,53 @@ logical operations：
 | Query logs | 获取带时间范围或游标的 UART log evidence |
 | Disconnect UART | 关闭本次 runtime connection |
 
-在首次 UART 操作前只执行一次 capability preflight。若用户仅请求 build 或 flash，不执行 preflight。
+## Runtime prerequisite gate
+
+只在 debug、hardware test 或 full loop 的首次 UART 操作前执行本 gate。若用户仅请求 build 或 flash，不检查 EmbedLink，也不执行 capability preflight。
+
+`Runtime order: inspect tool inventory first.`
+
+1. 先检查当前 runtime 实际暴露的 tool inventory，不猜测 Tool name，也不把 HTTP endpoint 当成 MCP Tool。
+2. Tool 已暴露时，执行一次无副作用 capability preflight 并继续。`Tool available: no startup or new-session prompt.`
+3. Tool 未暴露时，停止当前 UART 阶段，提示用户启动 EmbedLink，然后按当前 runtime 执行以下分支。
+
+### Claude Code：Tool 未暴露
+
+`Runtime: Claude Code; Tool: unavailable`
+
+`Action: start EmbedLink, create new Claude Code session, stop.`
+
+明确告知用户先启动 EmbedLink，再新建 Claude Code 会话，并在新会话中重新发起 debug、hardware test 或 full loop 请求。当前会话不继续 UART debugging，也不重试 MCP 调用。Tool 已暴露时不得显示这条新会话提示。
+
+### Codex：Tool 未暴露
+
+`Runtime: Codex; Tool: unavailable`
+
+先提示用户启动 EmbedLink。只有用户明确确认 EmbedLink 已启动后，才在当前任务中 `recheck tool inventory once`：
+
+- Tool 出现：执行一次无副作用 capability preflight 并继续。
+- `still unavailable: create a new Codex task`，提示用户在新任务中重试并停止当前 UART 阶段。
+
+`Do not loop inventory checks.` 这次用户动作后的 inventory recheck 不是同一 MCP call 的 retry；不得反复轮询，也不得在用户确认前检查。
+
+## EmbedLink service metadata
+
+统一配置记录：
+
+```markdown
+## EmbedLink
+- 状态检查: http://127.0.0.1:3000/health
+- MCP端点: http://127.0.0.1:3000/mcp
+```
+
+`URLs are configuration and manual troubleshooting metadata only.` `Agent must not request these HTTP endpoints directly.` 这两个地址不改变 MCP-only 边界，实际调用仍以 runtime tool inventory 和 MCP input schema 为准。
 
 ## MCP-only 边界
 
-EmbedLink MCP Tool 缺失、schema 不匹配、返回错误或超时后，立即停止 UART debugging 并报告。不得：
+EmbedLink MCP Tool 未暴露时执行上述 runtime 分支；capability preflight 或后续 MCP 调用发生 schema 不匹配、返回错误或超时后，立即停止 UART debugging 并报告。不得：
 
 - 自动 retry 同一 MCP 调用；
-- 启动、重启或修复 EmbedLink；
+- 由 Agent 启动、重启或修复 EmbedLink；
 - 调用 HTTP endpoint 或其他非 MCP transport；
 - 用 shell、PowerShell、Python、`pyserial`、serial CLI、第三方终端或直接 COM access 枚举、打开、读取或写入串口；
 - 切换到 legacy logging tool。
@@ -38,12 +77,12 @@ EmbedLink MCP Tool 缺失、schema 不匹配、返回错误或超时后，立即
 发生 MCP 故障后不再发起 UART tool call。最终面向用户的 failure report **REQUIRED** 使用下面六个 slot，字段名与顺序必须逐字一致；六项全部填写，不得翻译、使用 `能力` / `原因` / `Fallback` / `Retry` / `Next step` 等同义或替代字段，也不得另建一套报告格式：
 
 ```text
-阶段: <capability preflight | list | connect | send | query | disconnect>
+阶段: <tool discovery | capability preflight | list | connect | send | query | disconnect>
 MCP Tool: <runtime 实际 tool name；未暴露则写“未暴露”>
 错误: <原始错误摘要>
 已完成: <例如 build/flash 状态；无则写“无”>
 未验证: <尚未取得 log evidence 的硬件行为>
-用户操作建议: 请检查 EmbedLink 是否运行、MCP 是否已连接及 tool 是否已暴露；处理后明确要求继续
+用户操作建议: <按 Claude Code / Codex runtime 分支填写启动 EmbedLink 与会话建议>
 ```
 
 flash 已完成时，`已完成` 写明 exact flashed artifact；`未验证` 明确写“硬件行为尚未验证”。不得将 flash success 等同于 hardware verification success。

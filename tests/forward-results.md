@@ -658,3 +658,276 @@ Exit code: 0
 ## Live validation limit
 
 当前 runtime 未暴露 EmbedLink MCP Tool，因此本轮没有执行 live UART hardware test，也没有声称完成真实 hardware integration。已验证的是 EmbedLink MCP-only contract、failure behavior、固定 error report 与禁止 local serial fallback；真实 UART 行为仍需在 EmbedLink MCP Tool 可用且取得实际 log evidence 后验证。
+
+## 2026-07-24 EmbedLink session/config behavior
+
+### RED control
+
+使用 `d38da6d` 中修改前的 `SKILL.md` 与 `references/embedlink-mcp.md`，在 fresh context 中运行 Scenario D/E/F/G：
+
+| Scenario | Verdict | 旧 guidance 缺口 |
+|---|---|---|
+| D：Tool 已暴露 | PASS | 能执行一次无副作用 capability preflight，且没有启动/新会话提示 |
+| E：Claude Code Tool 未暴露 | FAIL | 只给通用 failure report，未提示启动 EmbedLink 和新建 Claude Code 会话 |
+| F：Codex Tool 未暴露 | FAIL | 单次 recheck 后仍给通用建议，未提示新建 Codex 任务 |
+| G：统一配置 metadata | FAIL | 没有 `## EmbedLink`、`状态检查`、`MCP端点` 与两个 URL |
+
+Control raw response：
+
+~~~~text
+Scenario D
+下一步按当前 runtime 实际暴露的 tool name、description 与 input schema，执行一次无副作用的 capability preflight，确认所需 EmbedLink MCP 能力存在且可调用。preflight 成功后，才继续 UART port list、connect 等操作。当前无需提示启动 EmbedLink，也无需新建 Claude Code 会话或 Codex 任务。
+
+Scenario E
+阶段: capability preflight
+MCP Tool: 未暴露
+错误: 当前 Claude Code runtime 的 tool inventory 未暴露所需 EmbedLink MCP Tool
+已完成: 无
+未验证: UART debugging 与相关硬件行为尚未取得 EmbedLink MCP log evidence
+用户操作建议: 请检查 EmbedLink 是否运行、MCP 是否已连接及 tool 是否已暴露；处理后明确要求继续
+
+Scenario F
+当前响应:
+阶段: capability preflight
+MCP Tool: 未暴露
+错误: 当前 Codex runtime 的 tool inventory 未暴露所需 EmbedLink MCP Tool
+已完成: 无
+未验证: UART debugging 与相关硬件行为尚未取得 EmbedLink MCP log evidence
+用户操作建议: 请检查 EmbedLink 是否运行、MCP 是否已连接及 tool 是否已暴露；处理后明确要求继续
+
+用户确认后重新检查仍未暴露:
+阶段: capability preflight
+MCP Tool: 未暴露
+错误: 重新检查后，当前 Codex runtime 仍未暴露所需 EmbedLink MCP Tool
+已完成: 无
+未验证: UART debugging 与相关硬件行为尚未取得 EmbedLink MCP log evidence
+用户操作建议: 请检查 EmbedLink 是否运行、MCP 是否已连接及 tool 是否已暴露；处理后明确要求继续
+
+Scenario G
+按旧版统一配置 contract，不存在独立的 EmbedLink service section。UART 配置只包含 ## Debug；connection_id 属于 runtime state，不写入配置。
+~~~~
+
+至少一类新增目标行为失败的 RED 条件已满足；实际为 E/F/G 三类失败。
+
+### Full-skill forward matrix
+
+五个样本分别在 fresh context 中读取当前完整 `SKILL.md`、`references/embedlink-mcp.md` 与 Scenario D/E/F/G：
+
+| Sample | D | E | F | G | D 中启动/新会话误提示 |
+|---|---|---|---|---|---|
+| 1 | PASS | PASS | PASS | PASS | 无 |
+| 2 | PASS | PASS | PASS | PASS | 无 |
+| 3 | PASS | PASS | PASS | PASS | 无 |
+| 4 | PASS | PASS | PASS | PASS | 无 |
+| 5 | PASS | PASS | PASS | PASS | 无 |
+
+汇总：D/E/F/G 均为 5/5 PASS；Scenario D 的启动或新会话误提示为 0/5。
+
+### Forward Sample 1
+
+~~~~text
+Scenario D
+下一步是使用当前 runtime inventory 中已经暴露的实际 EmbedLink MCP Tool，严格按其 name、description 和 input schema 执行一次无副作用 capability preflight，确认 UART hardware test 所需能力存在且可调用。preflight 成功后再进入 UART port list、connect 等后续操作。本轮尚未取得 EmbedLink MCP log evidence，因此不能声称 UART hardware verification 已完成。
+
+Scenario E
+阶段: tool discovery
+MCP Tool: 未暴露
+错误: 当前 Claude Code runtime 的 tool inventory 未暴露所需 EmbedLink MCP Tool
+已完成: 无
+未验证: UART debugging 与硬件行为尚未验证
+用户操作建议: 请先启动 EmbedLink，再新建 Claude Code 会话，并在新会话中重新发起 UART debugging 请求。当前会话的 UART 阶段到此停止，不重试 MCP 调用。
+
+Scenario F
+当前响应:
+阶段: tool discovery
+MCP Tool: 未暴露
+错误: 第一次检查 Codex runtime 的 tool inventory，未发现所需 EmbedLink MCP Tool
+已完成: 无
+未验证: UART debugging 与硬件行为尚未验证
+用户操作建议: 请启动 EmbedLink；启动后请明确回复“EmbedLink 已启动”。收到确认前我会等待，不重新检查 tool inventory。
+
+用户确认后唯一一次 recheck 仍未暴露:
+阶段: tool discovery
+MCP Tool: 未暴露
+错误: 用户确认 EmbedLink 已启动后，唯一一次 tool inventory 复查仍未暴露所需 Tool
+已完成: 无
+未验证: UART debugging 与硬件行为尚未验证
+用户操作建议: 请新建 Codex task，并在新任务中重新发起 UART debugging 请求。当前 UART 阶段停止，不再轮询或重试。
+
+Scenario G
+## EmbedLink
+- 状态检查: http://127.0.0.1:3000/health
+- MCP端点: http://127.0.0.1:3000/mcp
+
+这两个 URL 只用于配置记录和人工排障，不授权 Agent 直接请求 health endpoint，也不能作为 MCP transport。connection_id 属于 runtime state，不写入配置文件。
+~~~~
+
+Verdict：D/E/F/G 全部 **PASS**。
+
+### Forward Sample 2
+
+~~~~text
+Scenario D
+已确认当前 runtime 的 tool inventory 已暴露所需 EmbedLink MCP Tool。首次 UART 操作前，下一步是按照 inventory 中的实际 Tool name、description 和 input schema，执行一次无副作用 capability preflight，确认所需能力存在且可调用。preflight 通过后才进入 UART port list、connect 等操作。当前没有实际 MCP result，不能声称 UART hardware verification 已完成。
+
+Scenario E
+阶段: tool discovery
+MCP Tool: 未暴露
+错误: 当前 Claude Code runtime 的 tool inventory 未暴露 EmbedLink MCP Tool
+已完成: 无
+未验证: UART debugging 与相关硬件行为尚未取得 EmbedLink MCP log evidence
+用户操作建议: 当前 UART 阶段已停止。请启动 EmbedLink，随后新建 Claude Code 会话，并在新会话中重新发起 UART debugging 请求；当前会话不继续 UART debugging，也不重试 MCP 调用。
+
+Scenario F
+当前响应:
+阶段: tool discovery
+MCP Tool: 未暴露
+错误: 当前 Codex runtime 第一次检查 tool inventory 时未暴露 EmbedLink MCP Tool
+已完成: 无
+未验证: UART debugging 与相关硬件行为尚未取得 EmbedLink MCP log evidence
+用户操作建议: 当前 UART 阶段已停止。请启动 EmbedLink，并在启动后明确回复“EmbedLink 已启动”；在您确认前，我不会重新检查 tool inventory。
+
+用户确认后唯一一次 recheck 仍未暴露:
+阶段: tool discovery
+MCP Tool: 未暴露
+错误: 用户确认后已重新检查一次 tool inventory，EmbedLink MCP Tool 仍未暴露
+已完成: 无
+未验证: UART debugging 与相关硬件行为尚未取得 EmbedLink MCP log evidence
+用户操作建议: 本次只重新检查了一次，不再轮询。请新建 Codex 任务并在新任务中重新发起 UART debugging 请求；当前 UART 阶段保持停止。
+
+Scenario G
+## EmbedLink
+- 状态检查: http://127.0.0.1:3000/health
+- MCP端点: http://127.0.0.1:3000/mcp
+
+这两个 URL 只用于配置记录和人工排障，不是 Agent 可直接调用的 health check 或 MCP transport。connection_id 属于 runtime state，不写入配置文件。
+~~~~
+
+Verdict：D/E/F/G 全部 **PASS**。
+
+### Forward Sample 3
+
+~~~~text
+Scenario D
+当前 runtime inventory 已暴露所需 EmbedLink MCP Tool。首次 UART 操作前，下一步是依据实际 tool name 与 input schema，执行一次无副作用 capability preflight。取得真实 MCP log evidence 前，UART hardware test 状态为未验证。
+
+Scenario E
+阶段: tool discovery
+MCP Tool: 未暴露
+错误: 当前 Claude Code runtime 的 tool inventory 未暴露所需 EmbedLink MCP Tool
+已完成: 无
+未验证: UART 硬件行为尚未验证
+用户操作建议: 请启动 EmbedLink，然后新建 Claude Code 会话，并在新会话中重新发起 UART debugging 请求；当前会话停止 UART debugging，不重试 MCP。
+
+Scenario F
+第一次检查未暴露:
+当前 Codex runtime 的 tool inventory 未暴露所需 EmbedLink MCP Tool，UART 阶段暂时停止。请启动 EmbedLink，完成后明确回复“EmbedLink 已启动”；收到确认前我不会重新检查 tool inventory，也不会继续 UART 操作。
+
+用户确认后唯一一次 recheck 仍未暴露:
+阶段: tool discovery
+MCP Tool: 未暴露
+错误: 用户确认 EmbedLink 已启动后，唯一一次 tool inventory recheck 仍未暴露所需 Tool
+已完成: 无
+未验证: UART 硬件行为尚未验证
+用户操作建议: 请新建 Codex 任务并重新发起 UART debugging 请求；当前 UART 阶段停止，不再轮询。
+
+Scenario G
+## EmbedLink
+- 状态检查: http://127.0.0.1:3000/health
+- MCP端点: http://127.0.0.1:3000/mcp
+
+这些 URL 只供配置记录和人工排障；Agent 不会直接请求这些 HTTP endpoint。connection_id 属于 runtime state，不写入配置。
+~~~~
+
+Verdict：D/E/F/G 全部 **PASS**。
+
+### Forward Sample 4
+
+~~~~text
+Scenario D
+首次 UART 操作前，先按当前 runtime 已暴露的实际 tool name 和 input schema，执行一次无副作用 capability preflight，确认所需 EmbedLink MCP 能力可调用。preflight 成功后再进入 UART port list、connect 和测试步骤。目前尚无实际 MCP query log evidence，UART hardware verification 状态为未验证。
+
+Scenario E
+阶段: tool discovery
+MCP Tool: 未暴露
+错误: 当前 Claude Code runtime 的 tool inventory 未暴露 EmbedLink MCP Tool
+已完成: 无
+未验证: UART 硬件行为尚未验证
+用户操作建议: 停止当前 UART 阶段。请先启动 EmbedLink，再新建 Claude Code 会话，并在新会话中重新发起 UART debugging 请求。
+
+Scenario F
+首次检查未暴露:
+阶段: tool discovery
+MCP Tool: 未暴露
+错误: 当前 Codex runtime 的首次 tool inventory 检查未暴露 EmbedLink MCP Tool
+已完成: 无
+未验证: UART 硬件行为尚未验证
+用户操作建议: 请先启动 EmbedLink，启动完成后明确回复“EmbedLink 已启动”。在收到确认前，我不会重新检查 tool inventory。
+
+用户确认后唯一一次 recheck 仍未暴露:
+阶段: tool discovery
+MCP Tool: 未暴露
+错误: 用户确认 EmbedLink 已启动后，唯一一次 tool inventory 重新检查仍未暴露 EmbedLink MCP Tool
+已完成: 无
+未验证: UART 硬件行为尚未验证
+用户操作建议: 停止当前 UART 阶段。请新建 Codex 任务，并在新任务中重新发起 UART debugging 请求。
+
+Scenario G
+## EmbedLink
+- 状态检查: http://127.0.0.1:3000/health
+- MCP端点: http://127.0.0.1:3000/mcp
+
+以上 URL 只供配置记录和人工排障，不授权 Agent 将其作为可直接调用的 health check 或 MCP transport。connection_id 属于 runtime state，不写入配置文件。
+~~~~
+
+Verdict：D/E/F/G 全部 **PASS**。
+
+### Forward Sample 5
+
+~~~~text
+Scenario D
+已确认当前 runtime 的 tool inventory 已暴露所需 EmbedLink MCP Tool。下一步按实际暴露的 tool name 与 input schema，执行一次无副作用 capability preflight，确认所需能力可调用。在取得实际 MCP log result 前，UART hardware verification 状态为未验证。
+
+Scenario E
+阶段: tool discovery
+MCP Tool: 未暴露
+错误: 当前 Claude Code runtime 的 tool inventory 未暴露 EmbedLink MCP Tool，已停止当前 UART 阶段
+已完成: 无
+未验证: UART hardware behavior 尚未验证
+用户操作建议: 请先启动 EmbedLink，再新建 Claude Code 会话，并在新会话中重新发起 UART debugging 请求
+
+Scenario F
+当前响应:
+请先启动 EmbedLink。启动完成后请明确回复“EmbedLink 已启动”；在收到确认前，我不会重新检查 tool inventory，当前 UART debugging 暂停。
+
+用户确认后唯一一次 recheck 仍未暴露:
+阶段: tool discovery
+MCP Tool: 未暴露
+错误: 用户确认 EmbedLink 已启动后，已重新检查一次 tool inventory，但 EmbedLink MCP Tool 仍未暴露
+已完成: 无
+未验证: UART hardware behavior 尚未验证
+用户操作建议: 请新建 Codex 任务，并在新任务中重新发起 UART debugging 请求；当前任务停止 UART 阶段，不再轮询
+
+Scenario G
+## EmbedLink
+- 状态检查: http://127.0.0.1:3000/health
+- MCP端点: http://127.0.0.1:3000/mcp
+
+这些 URL 只供配置记录和人工排障，不授权 Agent 将其作为可直接调用的 health check 或 MCP transport。runtime connection_id 不写入配置文件。
+~~~~
+
+Verdict：D/E/F/G 全部 **PASS**。
+
+### 新增 requirement coverage
+
+| Requirement | Implementation | Evidence |
+|---|---|---|
+| 先检测再提示 | `SKILL.md`、`references/embedlink-mcp.md`、`README.md` | Scenario D 5/5 PASS，启动/新会话误提示 0/5 |
+| Claude Code conditional session | `references/embedlink-mcp.md`、`README.md` | Scenario E 5/5 PASS；Tool 未暴露才提示启动与新会话 |
+| Codex one-time hot-load check | `references/embedlink-mcp.md`、`README.md` | Scenario F 5/5 PASS；确认前不 recheck，确认后只检查一次，仍缺失才新建任务 |
+| EmbedLink service metadata | `SKILL.md`、`references/embedlink-mcp.md`、`README.md` | Scenario G 5/5 PASS；精确 section、字段名与 URL |
+| MCP-only boundary | `references/embedlink-mcp.md`、`tests/run-tests.ps1` | 20 个 forward responses 均未使用 HTTP/local serial；URL 明确仅供配置和人工排障 |
+
+### Live validation limit
+
+本轮 runtime 没有向主 Agent 暴露可调用的 live EmbedLink MCP Tool，因此 behavior test 只验证了 tool discovery、session guidance、配置 contract 与 failure behavior。没有执行 UART hardware test，也没有声称完成真实 hardware verification。
