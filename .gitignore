@@ -5,3 +5,4 @@ flash.jlink
 build.log
 .worktrees/
 .superpowers/
+docs/superpowers/
